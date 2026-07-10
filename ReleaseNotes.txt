@@ -1,0 +1,76 @@
+Jacaranda Comments 01.00.10
+- Changes successful comment/reply submission to a server-side redirect using Response.Redirect(..., false) plus CompleteRequest().
+- Removes the previous dependence on the delayed client-side redirect for the normal success path.
+- Keeps a fallback path that shows the message, clears fields, and rebinds comments if the server redirect cannot run.
+- Clears queued session messages when the query-string completion message is used, avoiding duplicate completion messages later.
+- No database schema changes.
+
+Jacaranda Comments 01.00.09
+- Fixes the success confirmation path so the user gets an immediate visible completion message after posting.
+- Registers a client-side clean redirect back to the page with jcposted/jcmid status parameters.
+- Reads the completion status from the query string after redirect instead of relying only on session state.
+- Clears the comment, CAPTCHA, and honeypot fields on the clean redirected GET.
+- Adds autocomplete="off" to the comment textarea to reduce browser restoration of old post text.
+- No database schema changes.
+
+Jacaranda Comments 01.00.08
+- Adds a clearer “Process complete” confirmation after successful comment/reply submission.
+- Redirects to the confirmation message anchor after the Post/Redirect/Get flow.
+- Focuses and scrolls the confirmation message into view when possible.
+- No database schema changes.
+
+Jacaranda Comments 01.00.07
+- Changes successful comment/reply posting to a Post/Redirect/Get flow.
+- Prevents the browser from refilling the add-comment textarea after a manual page refresh.
+- Carries the success/pending message through the redirect using a short-lived session value.
+- No database schema changes.
+
+01.00.06
+- Clears the add-comment/reply text box after a successful post or pending submission.
+- Also clears the CAPTCHA and hidden honeypot fields after successful form handling.
+- Adds a small server-registered client-side cleanup script to catch browser/postback field retention.
+- No database schema changes are required.
+
+01.00.05
+- Security audit/hardening release.
+- Confirmed comment/reply SQL values use parameters rather than string-concatenated user input.
+- Hardened SQL table identifier construction for DNN database owner/object qualifier values.
+- Added a per-session security token check for comment, reply, approve, and delete postbacks.
+- Locked stored display names to the logged-in DNN user profile to reduce impersonation/spoofing.
+- Hardened email address validation and removed CR/LF from notification email subjects.
+
+01.00.04
+- Hotfix: fully qualified DotNetNuke.Common.Globals.NavigateURL in View.ascx.
+- Fixes DNN runtime compile error CS0104 where 'Globals' was ambiguous between DotNetNuke.Common.Globals and Microsoft.VisualBasic.Globals.
+
+Version 01.00.03
+
+- Added a DNN module settings screen for moderation, anti-spam, and notification preferences.
+- Added optional moderation setting to hold or auto-approve non-editor comments/replies.
+- Added rate limiting for non-editor posters.
+- Added optional built-in math CAPTCHA for non-editor posters.
+- Added email notifications for new comments and replies, with configurable recipient addresses.
+- Kept ownership metadata for Trevor Forrester / Forrest It Services.
+
+Version 01.00.02
+
+- Updated package/module details and ownership metadata.
+- Owner: Trevor Forrester
+- Organization: Forrest It Services
+- URL: https://forrestitservices.org
+- Email Address: webmaster@forrestitservices.org
+
+Version 01.00.01
+
+- Added threaded replies using ParentCommentId.
+- Logged-in users can reply to an existing visible comment.
+- Replies use the same approval/moderation rules as top-level comments.
+- Reply display is indented up to three visual levels.
+- Includes an upgrade SQL script for existing 01.00.00 installs.
+
+Version 01.00.00
+
+- Initial DNN 10 page comments module.
+- Logged-in users can submit comments.
+- Non-editor comments are held for approval.
+- Page/module editors, administrators, and superusers can approve or delete comments.

@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dotnetnuke type="Package" version="5.0">
+  <packages>
+    <package name="Jacaranda_Comments" type="Module" version="01.00.10">
+      <friendlyName>Jacaranda Comments</friendlyName>
+      <description>Page-level comments and replies module for DNN 10 with moderation, rate limiting, email notifications, and optional CAPTCHA.</description>
+      <owner>
+        <name>Trevor Forrester</name>
+        <organization>Forrest It Services</organization>
+        <url>https://forrestitservices.org</url>
+        <email>webmaster@forrestitservices.org</email>
+      </owner>
+      <license src="License.txt" />
+      <releaseNotes src="ReleaseNotes.txt" />
+      <azureCompatible>true</azureCompatible>
+      <dependencies>
+        <dependency type="CoreVersion">10.00.00</dependency>
+      </dependencies>
+      <components>
+        <component type="Script">
+          <scripts>
+            <basePath>DesktopModules\Jacaranda\Comments</basePath>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.00.SqlDataProvider</name>
+              <version>01.00.00</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.01.SqlDataProvider</name>
+              <version>01.00.01</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.03.SqlDataProvider</name>
+              <version>01.00.03</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.04.SqlDataProvider</name>
+              <version>01.00.04</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.05.SqlDataProvider</name>
+              <version>01.00.05</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.06.SqlDataProvider</name>
+              <version>01.00.06</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.07.SqlDataProvider</name>
+              <version>01.00.07</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.08.SqlDataProvider</name>
+              <version>01.00.08</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.09.SqlDataProvider</name>
+              <version>01.00.09</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.10.SqlDataProvider</name>
+              <version>01.00.10</version>
+            </script>
+            <script type="UnInstall">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>Uninstall.SqlDataProvider</name>
+              <version>01.00.00</version>
+            </script>
+          </scripts>
+        </component>
+        <component type="ResourceFile">
+          <resourceFiles>
+            <basePath>DesktopModules\Jacaranda\Comments</basePath>
+            <resourceFile>
+              <name>Resources.zip</name>
+            </resourceFile>
+          </resourceFiles>
+        </component>
+        <component type="Module">
+          <desktopModule>
+            <moduleName>Jacaranda_Comments</moduleName>
+            <foldername>Jacaranda/Comments</foldername>
+            <businessControllerClass></businessControllerClass>
+            <moduleDefinitions>
+              <moduleDefinition>
+                <friendlyName>Jacaranda Comments</friendlyName>
+                <defaultCacheTime>0</defaultCacheTime>
+                <moduleControls>
+                  <moduleControl>
+                    <controlKey />
+                    <controlSrc>DesktopModules/Jacaranda/Comments/View.ascx</controlSrc>
+                    <supportsPartialRendering>False</supportsPartialRendering>
+                    <supportsPopUps>False</supportsPopUps>
+                    <controlTitle>Jacaranda Comments</controlTitle>
+                    <controlType>View</controlType>
+                    <viewOrder>0</viewOrder>
+                  </moduleControl>
+                  <moduleControl>
+                    <controlKey>Settings</controlKey>
+                    <controlSrc>DesktopModules/Jacaranda/Comments/Settings.ascx</controlSrc>
+                    <supportsPartialRendering>False</supportsPartialRendering>
+                    <supportsPopUps>False</supportsPopUps>
+                    <controlTitle>Jacaranda Comments Settings</controlTitle>
+                    <controlType>Edit</controlType>
+                    <viewOrder>1</viewOrder>
+                  </moduleControl>
+                </moduleControls>
+              </moduleDefinition>
+            </moduleDefinitions>
+          </desktopModule>
+        </component>
+      </components>
+    </package>
+  </packages>
+</dotnetnuke>

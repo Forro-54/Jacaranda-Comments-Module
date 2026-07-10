@@ -1,0 +1,6 @@
+-- Jacaranda Comments 01.00.03
+-- Settings-only upgrade. No schema changes are required for rate limiting,
+-- email notifications, CAPTCHA, or moderation preferences because these are
+-- stored in DNN module settings.
+
+GO

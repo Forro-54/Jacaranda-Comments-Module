@@ -1,0 +1,6 @@
+-- Jacaranda Comments 01.00.04
+-- Code-only hotfix.
+-- Fully qualifies DotNetNuke.Common.Globals in View.ascx to avoid an
+-- ambiguous reference with Microsoft.VisualBasic.Globals during runtime compile.
+
+GO

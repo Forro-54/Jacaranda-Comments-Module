@@ -1,0 +1,4 @@
+-- Jacaranda Comments 01.00.10
+-- No database schema changes.
+-- This release changes the post-save flow so successful comments redirect cleanly,
+-- reload the comments list immediately, and show the completion message reliably.

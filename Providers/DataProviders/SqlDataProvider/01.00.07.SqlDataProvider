@@ -1,0 +1,7 @@
+-- Jacaranda Comments 01.00.07
+-- Post/Redirect/Get cleanup release.
+-- Redirects after successful comments/replies so browser refresh cannot refill
+-- or resubmit the previously posted textarea content.
+-- No schema changes are required.
+
+GO

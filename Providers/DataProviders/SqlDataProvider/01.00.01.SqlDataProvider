@@ -1,0 +1,28 @@
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'ParentCommentId') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [ParentCommentId] INT NULL;
+    END
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_{objectQualifier}JacarandaComments_Parent'
+          AND object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+    )
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_{objectQualifier}JacarandaComments_Parent]
+        ON {databaseOwner}[{objectQualifier}JacarandaComments] (
+            [ParentCommentId],
+            [CreatedOnDate]
+        );
+    END
+END
+GO

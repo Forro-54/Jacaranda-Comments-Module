@@ -1,0 +1,10 @@
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    DROP TABLE {databaseOwner}[{objectQualifier}JacarandaComments];
+END
+GO

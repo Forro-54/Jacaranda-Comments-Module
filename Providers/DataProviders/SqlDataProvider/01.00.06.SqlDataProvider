@@ -1,0 +1,6 @@
+-- Jacaranda Comments 01.00.06
+-- UI cleanup release.
+-- Clears the add-comment/reply textbox after a successful post or pending submission.
+-- No schema changes are required.
+
+GO

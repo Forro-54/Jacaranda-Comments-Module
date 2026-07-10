@@ -1,0 +1,10 @@
+Jacaranda Comments Module
+
+Module details:
+- Owner: Trevor Forrester
+- Organization: Forrest It Services
+- URL: https://forrestitservices.org
+- Email Address: webmaster@forrestitservices.org
+
+This starter module is provided as-is for use on your DNN site.
+Review and test it on a development or staging DNN installation before installing on production.

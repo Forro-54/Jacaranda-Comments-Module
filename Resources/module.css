@@ -1,0 +1,368 @@
+/* Jacaranda Comments module
+   Scoped so it does not interfere with DNN edit-mode overlays or the Jacaranda navbar. */
+
+.jacaranda-comments {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(0, 128, 0, 0.25);
+    border-radius: 6px;
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    font-family: "Times New Roman", Times, serif;
+    color: #000;
+}
+
+.jacaranda-comments .jc-header {
+    align-items: baseline;
+    border-bottom: 2px solid #008000;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.35rem;
+}
+
+.jacaranda-comments h2,
+.jacaranda-comments h3 {
+    color: #008000;
+    font-family: "Times New Roman", Times, serif;
+    font-weight: bold;
+    margin: 0 0 0.5rem;
+}
+
+.jacaranda-comments h2 {
+    font-size: 1.7rem;
+}
+
+.jacaranda-comments h3 {
+    font-size: 1.35rem;
+    margin-top: 1rem;
+}
+
+.jacaranda-comments .jc-count {
+    color: #555;
+    font-size: 0.95rem;
+}
+
+.jacaranda-comments .jc-empty,
+.jacaranda-comments .jc-login-required,
+.jacaranda-comments .jc-message {
+    border-radius: 4px;
+    margin: 0.75rem 0;
+    padding: 0.75rem 1rem;
+}
+
+.jacaranda-comments .jc-message-anchor {
+    position: relative;
+    top: -0.5rem;
+}
+
+.jacaranda-comments .jc-empty,
+.jacaranda-comments .jc-login-required {
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+}
+
+.jacaranda-comments .jc-message-success {
+    background: #eef8ee;
+    border: 1px solid #81c348;
+}
+
+.jacaranda-comments .jc-message-complete {
+    box-shadow: 0 0 0 3px rgba(129, 195, 72, 0.18);
+    font-size: 1.08rem;
+}
+
+.jacaranda-comments .jc-message:focus {
+    outline: 3px solid rgba(0, 128, 0, 0.35);
+    outline-offset: 2px;
+}
+
+.jacaranda-comments .jc-message-error {
+    background: #fff0ec;
+    border: 1px solid #f46a25;
+}
+
+.jacaranda-comments .jc-comment {
+    border-bottom: 1px solid rgba(0, 128, 0, 0.18);
+    padding: 0.9rem 0;
+}
+
+.jacaranda-comments .jc-comment:last-of-type {
+    border-bottom: 0;
+}
+
+.jacaranda-comments .jc-depth-1,
+.jacaranda-comments .jc-depth-2,
+.jacaranda-comments .jc-depth-3 {
+    border-left: 3px solid rgba(129, 195, 72, 0.65);
+    margin-left: 1.25rem;
+    padding-left: 1rem;
+}
+
+.jacaranda-comments .jc-depth-2 {
+    margin-left: 2.5rem;
+}
+
+.jacaranda-comments .jc-depth-3 {
+    margin-left: 3.75rem;
+}
+
+.jacaranda-comments .jc-comment-pending,
+.jacaranda-comments .jc-pending {
+    opacity: 0.78;
+}
+
+.jacaranda-comments .jc-comment-meta {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.jacaranda-comments .jc-comment-author {
+    color: #008000;
+    font-size: 1.05rem;
+}
+
+.jacaranda-comments .jc-comment-date {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.jacaranda-comments .jc-comment-status {
+    background: #f46a25;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.78rem;
+    line-height: 1;
+    padding: 0.25rem 0.5rem;
+}
+
+.jacaranda-comments .jc-comment-status:empty {
+    display: none;
+}
+
+.jacaranda-comments .jc-comment-body {
+    font-size: 1.08rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.jacaranda-comments .jc-comment-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+}
+
+.jacaranda-comments .jc-moderation {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.jacaranda-comments .jc-action {
+    color: #008000;
+    font-size: 0.95rem;
+    font-weight: bold;
+}
+
+.jacaranda-comments .jc-action:hover,
+.jacaranda-comments .jc-action:focus {
+    color: #004c00;
+}
+
+.jacaranda-comments .jc-action-danger {
+    color: #803100;
+}
+
+.jacaranda-comments .jc-reply {
+    color: #006800;
+}
+
+.jacaranda-comments .jc-form {
+    border-top: 2px solid rgba(0, 128, 0, 0.2);
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+}
+
+.jacaranda-comments .jc-reply-context {
+    align-items: center;
+    background: #eef8ee;
+    border: 1px solid #81c348;
+    border-radius: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: space-between;
+    margin: 0.5rem 0 0.85rem;
+    padding: 0.65rem 0.75rem;
+}
+
+.jacaranda-comments .jc-cancel-reply {
+    color: #803100;
+    font-size: 0.95rem;
+    font-weight: bold;
+}
+
+.jacaranda-comments .jc-field {
+    margin-bottom: 0.85rem;
+}
+
+.jacaranda-comments label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.jacaranda-comments .jc-input,
+.jacaranda-comments .jc-textarea {
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    box-sizing: border-box;
+    color: #000;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 1rem;
+    max-width: 100%;
+    padding: 0.55rem;
+    width: 100%;
+}
+
+.jacaranda-comments .jc-textarea {
+    min-height: 8rem;
+    resize: vertical;
+}
+
+.jacaranda-comments .jc-submit {
+    background: #008000;
+    border: 1px solid #006800;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 1rem;
+    font-weight: bold;
+    padding: 0.55rem 1rem;
+}
+
+.jacaranda-comments .jc-submit:hover,
+.jacaranda-comments .jc-submit:focus {
+    background: #004c00;
+}
+
+.jacaranda-comments .jc-note {
+    color: #555;
+    font-size: 0.9rem;
+    margin: 0.65rem 0 0;
+    text-indent: 0;
+}
+
+.jacaranda-comments .jc-hp {
+    left: -10000px;
+    position: absolute;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+@media (max-width: 767.98px) {
+    .jacaranda-comments {
+        padding: 0.85rem;
+    }
+
+    .jacaranda-comments .jc-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+
+    .jacaranda-comments .jc-depth-1,
+    .jacaranda-comments .jc-depth-2,
+    .jacaranda-comments .jc-depth-3 {
+        margin-left: 0.65rem;
+        padding-left: 0.75rem;
+    }
+}
+
+
+/* =========================
+   SETTINGS / ANTI-SPAM UI
+   ========================= */
+
+.jacaranda-comments .jc-captcha-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.jacaranda-comments .jc-captcha-question {
+    color: #008000;
+    font-weight: bold;
+    min-width: 4.5rem;
+}
+
+.jacaranda-comments .jc-captcha-input {
+    max-width: 8rem;
+}
+
+.jacaranda-comments.jc-settings {
+    max-width: 960px;
+}
+
+.jacaranda-comments .jc-settings-section {
+    border: 1px solid rgba(0, 128, 0, 0.2);
+    border-radius: 6px;
+    margin: 1rem 0;
+    padding: 1rem;
+}
+
+.jacaranda-comments .jc-settings-section legend {
+    color: #008000;
+    float: none;
+    font-size: 1.15rem;
+    font-weight: bold;
+    padding: 0 0.35rem;
+    width: auto;
+}
+
+.jacaranda-comments .jc-setting-row {
+    margin-bottom: 0.75rem;
+}
+
+.jacaranda-comments .jc-setting-row label {
+    display: inline;
+    font-weight: normal;
+    margin-left: 0.35rem;
+}
+
+.jacaranda-comments .jc-setting-grid {
+    display: grid;
+    gap: 0.85rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.jacaranda-comments .jc-setting-help {
+    color: #555;
+    font-size: 0.92rem;
+    margin: 0.3rem 0 0;
+    text-indent: 0;
+}
+
+@media (max-width: 767.98px) {
+    .jacaranda-comments .jc-setting-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+.jacaranda-comments .jc-input[readonly] {
+    background: #f5f5f5;
+    color: #555;
+    cursor: not-allowed;
+}
