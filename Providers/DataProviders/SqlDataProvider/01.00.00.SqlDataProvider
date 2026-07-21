@@ -1,0 +1,42 @@
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    CREATE TABLE {databaseOwner}[{objectQualifier}JacarandaComments] (
+        [CommentId] INT IDENTITY(1,1) NOT NULL,
+        [PortalId] INT NOT NULL,
+        [TabId] INT NOT NULL,
+        [ModuleId] INT NOT NULL,
+        [ParentCommentId] INT NULL,
+        [UserId] INT NULL,
+        [DisplayName] NVARCHAR(100) NOT NULL,
+        [CommentText] NVARCHAR(MAX) NOT NULL,
+        [IsApproved] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JacarandaComments_IsApproved] DEFAULT (0),
+        [IsDeleted] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JacarandaComments_IsDeleted] DEFAULT (0),
+        [CreatedOnDate] DATETIME NOT NULL CONSTRAINT [DF_{objectQualifier}JacarandaComments_CreatedOnDate] DEFAULT (GETUTCDATE()),
+        [CreatedByUserId] INT NULL,
+        [LastModifiedOnDate] DATETIME NULL,
+        [LastModifiedByUserId] INT NULL,
+        CONSTRAINT [PK_{objectQualifier}JacarandaComments] PRIMARY KEY CLUSTERED ([CommentId] ASC)
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_{objectQualifier}JacarandaComments_Page]
+    ON {databaseOwner}[{objectQualifier}JacarandaComments] (
+        [PortalId],
+        [TabId],
+        [ModuleId],
+        [IsDeleted],
+        [IsApproved],
+        [CreatedOnDate]
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_{objectQualifier}JacarandaComments_Parent]
+    ON {databaseOwner}[{objectQualifier}JacarandaComments] (
+        [ParentCommentId],
+        [CreatedOnDate]
+    );
+END
+GO
