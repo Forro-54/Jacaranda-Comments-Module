@@ -6,4 +6,4 @@ Jacaranda Comments is a lightweight DNN 10 comments module built for the Bootstr
 
 Install the versioned `Jacaranda_Comments_XX.XX.XX_Install.zip` file through DNN Extensions. The source ZIP is for review and development and is not the DNN installation package.
 
-Current maintenance release: **01.00.11**.
+Current package version: **01.00.19**. Test the install package before committing the repository update.

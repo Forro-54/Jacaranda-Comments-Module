@@ -1,0 +1,3 @@
+﻿-- Jacaranda Comments 01.00.18
+-- No database schema changes are required for this maintenance release.
+-- Notifications now dismiss reliably, and approved new comments/replies return to their exact rendered item.

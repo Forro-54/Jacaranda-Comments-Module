@@ -16,6 +16,8 @@
 
         chkRequireApproval.Checked = GetSettingBool("RequireApprovalForNonEditors", true);
 
+        txtMaximumCommentLength.Text = GetSettingInt("MaximumCommentLength", 4000, 250, 10000).ToString();
+
         chkEnableRateLimiting.Checked = GetSettingBool("EnableRateLimiting", true);
         txtRateLimitSeconds.Text = GetSettingInt("RateLimitSeconds", 60, 0, 3600).ToString();
         txtRateLimitMaxPosts.Text = GetSettingInt("RateLimitMaxPosts", 5, 1, 100).ToString();
@@ -33,6 +35,8 @@
         var controller = new ModuleController();
 
         controller.UpdateModuleSetting(ModuleId, Key("RequireApprovalForNonEditors"), chkRequireApproval.Checked.ToString());
+
+        controller.UpdateModuleSetting(ModuleId, Key("MaximumCommentLength"), ClampInt(txtMaximumCommentLength.Text, 4000, 250, 10000).ToString());
 
         controller.UpdateModuleSetting(ModuleId, Key("EnableRateLimiting"), chkEnableRateLimiting.Checked.ToString());
         controller.UpdateModuleSetting(ModuleId, Key("RateLimitSeconds"), ClampInt(txtRateLimitSeconds.Text, 60, 0, 3600).ToString());
@@ -113,6 +117,39 @@
                           Text="Hold comments and replies from non-editors for approval" />
             <p class="jc-setting-help">
                 Editors, administrators, and superusers can still post immediately and approve/delete comments from the module view.
+            </p>
+        </div>
+    </fieldset>
+
+    <fieldset class="jc-settings-section">
+        <legend>Comment length</legend>
+
+        <div class="jc-field jc-setting-number">
+            <asp:Label ID="lblMaximumCommentLength"
+                       runat="server"
+                       AssociatedControlID="txtMaximumCommentLength"
+                       Text="Maximum characters per comment or reply" />
+            <asp:TextBox ID="txtMaximumCommentLength"
+                         runat="server"
+                         CssClass="jc-input"
+                         MaxLength="5" />
+            <asp:RequiredFieldValidator ID="valMaximumCommentLengthRequired"
+                                        runat="server"
+                                        ControlToValidate="txtMaximumCommentLength"
+                                        CssClass="jc-validation"
+                                        Display="Dynamic"
+                                        ErrorMessage="Enter a maximum comment length." />
+            <asp:RangeValidator ID="valMaximumCommentLengthRange"
+                                runat="server"
+                                ControlToValidate="txtMaximumCommentLength"
+                                CssClass="jc-validation"
+                                Display="Dynamic"
+                                Type="Integer"
+                                MinimumValue="250"
+                                MaximumValue="10000"
+                                ErrorMessage="Enter a whole number from 250 to 10,000." />
+            <p class="jc-setting-help">
+                Default: 4,000 characters. This setting applies to both comments and replies and is stored separately for each module instance.
             </p>
         </div>
     </fieldset>
@@ -211,6 +248,6 @@
     </fieldset>
 
     <p class="jc-note">
-        Settings are stored as DNN module settings, so each instance of the comments module can have its own moderation and anti-spam behaviour.
+        Settings are stored as DNN module settings, so each instance of the comments module can have its own comment length, moderation, and anti-spam behaviour.
     </p>
 </div>

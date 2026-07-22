@@ -1,0 +1,3 @@
+﻿-- Jacaranda Comments 01.00.19
+-- No database schema changes are required for this maintenance release.
+-- Completion targeting now runs after comment binding and retries until nested reply targets are available.

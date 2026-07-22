@@ -1,0 +1,3 @@
+﻿-- Jacaranda Comments 01.00.17
+-- No database schema changes are required for this maintenance release.
+-- Posting validation errors now return focus to the comment form and display a fixed notification.

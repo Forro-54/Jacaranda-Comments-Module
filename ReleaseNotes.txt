@@ -1,3 +1,45 @@
+﻿Jacaranda Comments 01.00.19
+- Binds and renders the current comment thread before registering post-completion targeting.
+- Retries exact comment/reply targeting until the rendered nested item is available in the DNN page lifecycle.
+- Extends settling passes so later DNN layout changes do not pull the page away from an immediately published reply.
+- Keeps pending comments and replies at the confirmation area because they are not rendered for ordinary users.
+- Keeps notifications, character limits, moderation, rate limiting, CAPTCHA, email, approval, and deletion behaviour unchanged.
+- No database schema changes.
+
+Jacaranda Comments 01.00.18
+- Makes success and posting-error notifications dismiss reliably through both the close button and a fixed 12-second timeout.
+- Removes indefinite hover-based timer cancellation.
+- Positions notifications at the middle-right of the viewport, with a responsive centred-width layout on smaller screens.
+- Gives every rendered comment and reply a unique module-scoped HTML target.
+- Returns immediately approved comments and replies to their exact rendered item after the clean redirect.
+- Validates the redirected comment ID against the current portal, page, module, approval, and deletion scope before using it.
+- Keeps pending comments and replies at the confirmation area because they are not yet rendered publicly.
+- No database schema changes.
+
+Jacaranda Comments 01.00.17
+- Keeps users at the comment form when a comment or reply fails length, CAPTCHA, or rate-limit validation.
+- Shows posting validation errors in a fixed, dismissible notification so the reason remains visible in long comment threads.
+- Positions success and error notifications at the middle-right of the viewport to reduce eye movement, with a centred responsive layout on small screens.
+- Preserves the full comment text and places keyboard focus back in the comment box for correction.
+- Stops the repeated scroll-to-top behaviour that could appear as a brief page flash after validation errors.
+- No database schema changes.
+
+Jacaranda Comments 01.00.16
+- Stops browsers from silently truncating pasted comments at the configured character limit.
+- Keeps the full pasted text in the comment box and shows the live counter as characters over the limit.
+- Retains server-side length validation so over-limit submissions are rejected before database insertion or email notification.
+- Adds a fixed success notification that remains visible wherever the user is positioned in a long comment thread.
+- Keeps the existing inline completion message as a visual fallback and allows the popup notification to be dismissed or to close automatically.
+- No database schema changes.
+
+Jacaranda Comments 01.00.15
+- Adds a per-module setting for the maximum length of comments and replies.
+- Defaults to 4,000 characters and allows authorised module editors to choose a value from 250 to 10,000.
+- Applies the saved limit consistently to the textarea, live remaining-character counter, server-side validation, error message, and parameterised SQL insert.
+- Keeps over-length text in the form so the user can shorten it.
+- Uses the current module setting dynamically in all guidance and validation messages.
+- No database schema changes.
+
 Jacaranda Comments 01.00.14
 - Returns the page to the comment form when a registered user selects Reply.
 - Places keyboard focus in the comment text box after reply selection.

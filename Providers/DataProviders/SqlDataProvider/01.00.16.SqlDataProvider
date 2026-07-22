@@ -1,0 +1,3 @@
+-- Jacaranda Comments 01.00.16
+-- No database schema changes are required for this release.
+-- This release improves over-limit paste handling and success notifications.

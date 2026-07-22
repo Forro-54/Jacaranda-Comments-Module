@@ -1,0 +1,3 @@
+-- Jacaranda Comments 01.00.15
+-- No database schema changes are required for this release.
+-- The configurable comment/reply length is stored as a DNN module setting.

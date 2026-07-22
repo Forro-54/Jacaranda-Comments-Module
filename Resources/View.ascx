@@ -14,16 +14,21 @@
 <%@ Import Namespace="DotNetNuke.Services.Mail" %>
 
 <script runat="server">
-    private const int MaxCommentLength = 2000;
+    private const int DefaultMaximumCommentLength = 4000;
+    private const int MinimumMaximumCommentLength = 250;
+    private const int MaximumMaximumCommentLength = 10000;
     private const int MinCommentLength = 3;
     private const string SettingPrefix = "JacarandaComments_";
     private const string CaptchaAnswerViewStateKey = "JacarandaComments_CaptchaAnswer";
     private const string SecurityTokenSessionKeyPrefix = "JacarandaComments_SecurityToken_";
     private const string PostRedirectMessageSessionKeyPrefix = "JacarandaComments_PostRedirectMessage_";
     private const string PostRedirectSuccessSessionKeyPrefix = "JacarandaComments_PostRedirectSuccess_";
+    private const string PostRedirectTargetCommentSessionKeyPrefix = "JacarandaComments_PostRedirectTargetComment_";
     private const string PostRedirectMessageAnchorPrefix = "jacaranda-comments-message-";
+    private const string CommentAnchorPrefix = "jacaranda-comment-";
     private const string PostRedirectStatusQueryKey = "jcposted";
     private const string PostRedirectModuleQueryKey = "jcmid";
+    private const string PostRedirectCommentQueryKey = "jccid";
 
     private string PostRedirectMessageAnchorId
     {
@@ -66,6 +71,14 @@
         }
     }
 
+    private string PostRedirectTargetCommentSessionKey
+    {
+        get
+        {
+            return PostRedirectTargetCommentSessionKeyPrefix + PortalId + "_" + TabId + "_" + ModuleId + "_" + UserId;
+        }
+    }
+
     private string ConnectionString
     {
         get { return Config.GetConnectionString(); }
@@ -84,6 +97,18 @@
     private bool RequireApprovalForNonEditors
     {
         get { return GetModuleSettingBool("RequireApprovalForNonEditors", true); }
+    }
+
+    private int MaximumCommentLength
+    {
+        get
+        {
+            return GetModuleSettingInt(
+                "MaximumCommentLength",
+                DefaultMaximumCommentLength,
+                MinimumMaximumCommentLength,
+                MaximumMaximumCommentLength);
+        }
     }
 
     private bool EnableRateLimiting
@@ -140,8 +165,8 @@
             ClearReplyContext();
             ClearCommentEntryFields();
             EnsureCaptchaChallenge();
-            ShowPostCompletionMessageFromRedirect();
             BindComments();
+            ShowPostCompletionMessageFromRedirect();
         }
     }
 
@@ -239,7 +264,18 @@
         litModerationNote.Text = BuildModerationNote();
 
         txtDisplayName.ReadOnly = true;
+
+        var maximumCommentLength = MaximumCommentLength;
+        // Do not apply the browser maxlength attribute. Some browsers silently
+        // truncate pasted text, preventing the server from warning the user.
+        txtComment.MaxLength = 0;
+        txtComment.Attributes.Remove("maxlength");
         txtComment.Attributes["autocomplete"] = "off";
+        txtComment.Attributes["aria-describedby"] = commentLengthHelp.ClientID;
+
+        litCommentLimit.Text = "Maximum " + maximumCommentLength.ToString("N0") + " characters.";
+        spnCommentCounter.InnerText = BuildCharacterCounterText(
+            maximumCommentLength - (txtComment.Text ?? String.Empty).Length);
         txtCaptcha.Attributes["autocomplete"] = "off";
         txtWebsite.Attributes["autocomplete"] = "off";
 
@@ -247,6 +283,8 @@
         {
             txtDisplayName.Text = GetCurrentUserDisplayName();
         }
+
+        RegisterCharacterCounterScript(maximumCommentLength);
     }
 
     private void BindComments()
@@ -394,16 +432,21 @@ ORDER BY CreatedOnDate ASC;";
         if (commentText.Length < MinCommentLength)
         {
             RestoreReplyContextFromHiddenField();
-            ShowMessage("Please enter a longer comment.", false);
+            ShowPostingValidationMessage("Please enter a longer comment.");
             ConfigureForm();
             BindComments();
             return;
         }
 
-        if (commentText.Length > MaxCommentLength)
+        var maximumCommentLength = MaximumCommentLength;
+
+        if (commentText.Length > maximumCommentLength)
         {
             RestoreReplyContextFromHiddenField();
-            ShowMessage("Please keep comments under " + MaxCommentLength + " characters.", false);
+            ShowPostingValidationMessage(
+                "Your comment is too long. Please shorten it to "
+                + maximumCommentLength.ToString("N0")
+                + " characters or fewer.");
             ConfigureForm();
             BindComments();
             return;
@@ -414,7 +457,7 @@ ORDER BY CreatedOnDate ASC;";
         {
             RestoreReplyContextFromHiddenField();
             GenerateCaptchaChallenge();
-            ShowMessage(captchaError, false);
+            ShowPostingValidationMessage(captchaError);
             ConfigureForm();
             BindComments();
             return;
@@ -424,7 +467,7 @@ ORDER BY CreatedOnDate ASC;";
         if (!CheckRateLimit(out rateLimitError))
         {
             RestoreReplyContextFromHiddenField();
-            ShowMessage(rateLimitError, false);
+            ShowPostingValidationMessage(rateLimitError);
             ConfigureForm();
             BindComments();
             return;
@@ -487,7 +530,7 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
 
             command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
             command.Parameters.Add("@DisplayName", SqlDbType.NVarChar, 100).Value = Truncate(displayName, 100);
-            command.Parameters.Add("@CommentText", SqlDbType.NVarChar, MaxCommentLength).Value = commentText;
+            command.Parameters.Add("@CommentText", SqlDbType.NVarChar, maximumCommentLength).Value = commentText;
             command.Parameters.Add("@IsApproved", SqlDbType.Bit).Value = autoApprove;
             command.Parameters.Add("@CreatedByUserId", SqlDbType.Int).Value = UserId;
 
@@ -512,9 +555,11 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
 
         var statusCode = GetPostRedirectStatusCode(parentCommentId.HasValue, autoApprove);
 
-        QueuePostRedirectMessage(successMessage, true);
+        var redirectTargetCommentId = autoApprove ? (int?)newCommentId : null;
 
-        if (TryRedirectAfterSuccessfulPost(statusCode))
+        QueuePostRedirectMessage(successMessage, true, redirectTargetCommentId);
+
+        if (TryRedirectAfterSuccessfulPost(statusCode, redirectTargetCommentId))
         {
             return;
         }
@@ -522,6 +567,12 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
         ShowMessage(successMessage, true);
         ConfigureForm();
         BindComments();
+
+        if (redirectTargetCommentId.HasValue)
+        {
+            RegisterCommentTargetFocusScript(redirectTargetCommentId.Value);
+        }
+
         RegisterClearCommentFormScript();
         return;
     }
@@ -717,6 +768,68 @@ WHERE CommentId = @CommentId
         txtComment.Text = String.Empty;
         txtCaptcha.Text = String.Empty;
         txtWebsite.Text = String.Empty;
+    }
+
+
+    private string BuildCharacterCounterText(int remainingCharacters)
+    {
+        if (remainingCharacters < 0)
+        {
+            return Math.Abs(remainingCharacters).ToString("N0") + " characters over the limit.";
+        }
+
+        return remainingCharacters.ToString("N0") + " characters remaining.";
+    }
+
+    private void RegisterCharacterCounterScript(int maximumCommentLength)
+    {
+        if (Page == null || txtComment == null || spnCommentCounter == null)
+        {
+            return;
+        }
+
+        var textBoxId = HttpUtility.JavaScriptStringEncode(txtComment.ClientID);
+        var counterId = HttpUtility.JavaScriptStringEncode(spnCommentCounter.ClientID);
+
+        var script = @"
+(function () {
+    var field = document.getElementById('" + textBoxId + @"');
+    var counter = document.getElementById('" + counterId + @"');
+    var maximumLength = " + maximumCommentLength + @";
+
+    if (!field || !counter) { return; }
+
+    // Keep the full text available so the server can reject an over-limit
+    // submission without silently discarding pasted content.
+    field.removeAttribute('maxlength');
+
+    function formatNumber(value) {
+        try {
+            return value.toLocaleString();
+        } catch (e) {
+            return value.toString();
+        }
+    }
+
+    function updateCounter() {
+        var remaining = maximumLength - field.value.length;
+
+        if (remaining < 0) {
+            counter.textContent = formatNumber(Math.abs(remaining)) + ' characters over the limit.';
+            counter.classList.add('jc-over-limit');
+            field.setAttribute('aria-invalid', 'true');
+        } else {
+            counter.textContent = formatNumber(remaining) + ' characters remaining.';
+            counter.classList.remove('jc-over-limit');
+            field.removeAttribute('aria-invalid');
+        }
+    }
+
+    field.addEventListener('input', updateCounter);
+    updateCounter();
+})();";
+
+        RegisterStartupScript("JacarandaCommentsCharacterCounter_" + ModuleId, script);
     }
 
 
@@ -1296,7 +1409,29 @@ WHERE CommentId = @CommentId
         return value.Length <= maxLength ? value : value.Substring(0, maxLength);
     }
 
+    protected string CommentAnchorId(object commentId)
+    {
+        int parsedCommentId;
+
+        if (!Int32.TryParse(Convert.ToString(commentId), out parsedCommentId) || parsedCommentId <= 0)
+        {
+            return CommentAnchorPrefix + ModuleId + "-0";
+        }
+
+        return GetCommentAnchorId(parsedCommentId);
+    }
+
+    private string GetCommentAnchorId(int commentId)
+    {
+        return CommentAnchorPrefix + ModuleId + "-" + commentId;
+    }
+
     private void QueuePostRedirectMessage(string message, bool success)
+    {
+        QueuePostRedirectMessage(message, success, null);
+    }
+
+    private void QueuePostRedirectMessage(string message, bool success, int? targetCommentId)
     {
         if (Session == null)
         {
@@ -1305,29 +1440,46 @@ WHERE CommentId = @CommentId
 
         Session[PostRedirectMessageSessionKey] = message ?? String.Empty;
         Session[PostRedirectSuccessSessionKey] = success.ToString();
+
+        if (targetCommentId.HasValue && targetCommentId.Value > 0)
+        {
+            Session[PostRedirectTargetCommentSessionKey] = targetCommentId.Value.ToString();
+        }
+        else
+        {
+            Session.Remove(PostRedirectTargetCommentSessionKey);
+        }
     }
 
     private void ShowPostCompletionMessageFromRedirect()
     {
         string message;
         bool success;
+        int? targetCommentId;
 
-        if (TryGetPostRedirectMessageFromQuery(out message, out success))
+        if (TryGetPostRedirectMessageFromQuery(out message, out success, out targetCommentId))
         {
             ShowMessage(message, success);
             ClearCommentEntryFields();
             RegisterClearCommentFormScript();
-            RegisterCleanPostRedirectUrlScript();
+
+            if (targetCommentId.HasValue)
+            {
+                RegisterCommentTargetFocusScript(targetCommentId.Value);
+            }
+
+            RegisterCleanPostRedirectUrlScript(targetCommentId);
             return;
         }
 
         ShowQueuedPostRedirectMessage();
     }
 
-    private bool TryGetPostRedirectMessageFromQuery(out string message, out bool success)
+    private bool TryGetPostRedirectMessageFromQuery(out string message, out bool success, out int? targetCommentId)
     {
         message = String.Empty;
         success = true;
+        targetCommentId = null;
 
         if (Request == null || Request.QueryString == null)
         {
@@ -1368,9 +1520,25 @@ WHERE CommentId = @CommentId
 
         var queuedMessage = Convert.ToString(rawQueuedMessage);
         var rawSuccess = Session[PostRedirectSuccessSessionKey];
+        var rawQueuedTargetCommentId = Session[PostRedirectTargetCommentSessionKey];
 
         Session.Remove(PostRedirectMessageSessionKey);
         Session.Remove(PostRedirectSuccessSessionKey);
+        Session.Remove(PostRedirectTargetCommentSessionKey);
+
+        int queuedTargetCommentId;
+        int queryTargetCommentId;
+        var rawQueryTargetCommentId = Request.QueryString[PostRedirectCommentQueryKey];
+
+        if (Int32.TryParse(Convert.ToString(rawQueuedTargetCommentId), out queuedTargetCommentId)
+            && queuedTargetCommentId > 0
+            && (String.IsNullOrWhiteSpace(rawQueryTargetCommentId)
+                || (Int32.TryParse(rawQueryTargetCommentId, out queryTargetCommentId)
+                    && queryTargetCommentId == queuedTargetCommentId))
+            && IsApprovedCommentVisibleInCurrentScope(queuedTargetCommentId))
+        {
+            targetCommentId = queuedTargetCommentId;
+        }
 
         if (!String.IsNullOrWhiteSpace(queuedMessage))
         {
@@ -1401,9 +1569,11 @@ WHERE CommentId = @CommentId
 
         var message = Convert.ToString(rawMessage);
         var rawSuccess = Session[PostRedirectSuccessSessionKey];
+        var rawTargetCommentId = Session[PostRedirectTargetCommentSessionKey];
 
         Session.Remove(PostRedirectMessageSessionKey);
         Session.Remove(PostRedirectSuccessSessionKey);
+        Session.Remove(PostRedirectTargetCommentSessionKey);
 
         if (String.IsNullOrWhiteSpace(message))
         {
@@ -1417,6 +1587,14 @@ WHERE CommentId = @CommentId
         }
 
         ShowMessage(message, success);
+
+        int targetCommentId;
+        if (Int32.TryParse(Convert.ToString(rawTargetCommentId), out targetCommentId)
+            && targetCommentId > 0
+            && IsApprovedCommentVisibleInCurrentScope(targetCommentId))
+        {
+            RegisterCommentTargetFocusScript(targetCommentId);
+        }
     }
 
     private string GetPostRedirectStatusCode(bool isReply, bool isApproved)
@@ -1454,6 +1632,36 @@ WHERE CommentId = @CommentId
         }
     }
 
+    private bool IsApprovedCommentVisibleInCurrentScope(int commentId)
+    {
+        if (commentId <= 0)
+        {
+            return false;
+        }
+
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+SELECT COUNT(1)
+FROM " + CommentsTable + @"
+WHERE CommentId = @CommentId
+  AND PortalId = @PortalId
+  AND TabId = @TabId
+  AND ModuleId = @ModuleId
+  AND IsApproved = 1
+  AND IsDeleted = 0;";
+
+            command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            command.Parameters.Add("@TabId", SqlDbType.Int).Value = TabId;
+            command.Parameters.Add("@ModuleId", SqlDbType.Int).Value = ModuleId;
+
+            connection.Open();
+            return Convert.ToInt32(command.ExecuteScalar()) > 0;
+        }
+    }
+
     private void ClearQueuedPostRedirectMessage()
     {
         if (Session == null)
@@ -1463,9 +1671,10 @@ WHERE CommentId = @CommentId
 
         Session.Remove(PostRedirectMessageSessionKey);
         Session.Remove(PostRedirectSuccessSessionKey);
+        Session.Remove(PostRedirectTargetCommentSessionKey);
     }
 
-    private void RegisterCleanPostRedirectUrlScript()
+    private void RegisterCleanPostRedirectUrlScript(int? targetCommentId)
     {
         if (Page == null)
         {
@@ -1476,11 +1685,15 @@ WHERE CommentId = @CommentId
 
         try
         {
-            cleanUrl = AppendMessageAnchor(DotNetNuke.Common.Globals.NavigateURL(TabId, String.Empty));
+            cleanUrl = AppendRedirectAnchor(
+                DotNetNuke.Common.Globals.NavigateURL(TabId, String.Empty),
+                targetCommentId);
         }
         catch
         {
-            cleanUrl = "#" + PostRedirectMessageAnchorId;
+            cleanUrl = "#" + (targetCommentId.HasValue
+                ? GetCommentAnchorId(targetCommentId.Value)
+                : PostRedirectMessageAnchorId);
         }
 
         var script = @"
@@ -1498,7 +1711,12 @@ WHERE CommentId = @CommentId
 
     private bool TryRedirectAfterSuccessfulPost(string statusCode)
     {
-        var redirectUrl = BuildPostRedirectUrl(statusCode);
+        return TryRedirectAfterSuccessfulPost(statusCode, null);
+    }
+
+    private bool TryRedirectAfterSuccessfulPost(string statusCode, int? targetCommentId)
+    {
+        var redirectUrl = BuildPostRedirectUrl(statusCode, targetCommentId);
 
         if (String.IsNullOrWhiteSpace(redirectUrl) || Response == null)
         {
@@ -1556,6 +1774,11 @@ WHERE CommentId = @CommentId
 
     private string BuildPostRedirectUrl(string statusCode)
     {
+        return BuildPostRedirectUrl(statusCode, null);
+    }
+
+    private string BuildPostRedirectUrl(string statusCode, int? targetCommentId)
+    {
         var safeStatusCode = (statusCode ?? String.Empty).Trim().ToLowerInvariant();
 
         if (String.IsNullOrWhiteSpace(safeStatusCode))
@@ -1567,11 +1790,22 @@ WHERE CommentId = @CommentId
 
         try
         {
+            var redirectParameters = new List<string>
+            {
+                PostRedirectStatusQueryKey + "=" + HttpUtility.UrlEncode(safeStatusCode),
+                PostRedirectModuleQueryKey + "=" + ModuleId.ToString()
+            };
+
+            if (targetCommentId.HasValue && targetCommentId.Value > 0)
+            {
+                redirectParameters.Add(
+                    PostRedirectCommentQueryKey + "=" + targetCommentId.Value.ToString());
+            }
+
             redirectUrl = DotNetNuke.Common.Globals.NavigateURL(
                 TabId,
                 String.Empty,
-                PostRedirectStatusQueryKey + "=" + HttpUtility.UrlEncode(safeStatusCode),
-                PostRedirectModuleQueryKey + "=" + ModuleId.ToString());
+                redirectParameters.ToArray());
         }
         catch
         {
@@ -1589,15 +1823,21 @@ WHERE CommentId = @CommentId
                 redirectUrl = redirectUrl + separator
                     + PostRedirectStatusQueryKey + "=" + HttpUtility.UrlEncode(safeStatusCode)
                     + "&" + PostRedirectModuleQueryKey + "=" + ModuleId.ToString();
+
+                if (targetCommentId.HasValue && targetCommentId.Value > 0)
+                {
+                    redirectUrl += "&" + PostRedirectCommentQueryKey + "="
+                        + targetCommentId.Value.ToString();
+                }
             }
         }
 
-        redirectUrl = AppendMessageAnchor(redirectUrl);
+        redirectUrl = AppendRedirectAnchor(redirectUrl, targetCommentId);
 
         return redirectUrl;
     }
 
-    private string AppendMessageAnchor(string redirectUrl)
+    private string AppendRedirectAnchor(string redirectUrl, int? targetCommentId)
     {
         if (String.IsNullOrWhiteSpace(redirectUrl))
         {
@@ -1610,17 +1850,31 @@ WHERE CommentId = @CommentId
             redirectUrl = redirectUrl.Substring(0, hashIndex);
         }
 
-        return redirectUrl + "#" + PostRedirectMessageAnchorId;
+        var anchorId = targetCommentId.HasValue && targetCommentId.Value > 0
+            ? GetCommentAnchorId(targetCommentId.Value)
+            : PostRedirectMessageAnchorId;
+
+        return redirectUrl + "#" + anchorId;
     }
 
     private void ShowMessage(string message, bool success)
+    {
+        ShowMessage(message, success, false);
+    }
+
+    private void ShowPostingValidationMessage(string message)
+    {
+        ShowMessage(message, false, true);
+    }
+
+    private void ShowMessage(string message, bool success, bool returnToCommentForm)
     {
         pnlMessage.Visible = true;
         pnlMessage.CssClass = success
             ? "jc-message jc-message-success jc-message-complete"
             : "jc-message jc-message-error";
-        pnlMessage.Attributes["role"] = success ? "status" : "alert";
-        pnlMessage.Attributes["aria-live"] = success ? "polite" : "assertive";
+        pnlMessage.Attributes["role"] = success ? "presentation" : "alert";
+        pnlMessage.Attributes["aria-live"] = success ? "off" : "assertive";
         pnlMessage.Attributes["tabindex"] = "-1";
 
         var encodedMessage = Server.HtmlEncode(message);
@@ -1629,7 +1883,74 @@ WHERE CommentId = @CommentId
             ? "<strong>Process complete.</strong> " + encodedMessage
             : encodedMessage;
 
-        RegisterMessageFocusScript();
+        pnlToast.Visible = success || returnToCommentForm;
+
+        if (success)
+        {
+            pnlToast.CssClass = "jc-toast jc-toast-success";
+            pnlToast.Attributes["role"] = "status";
+            pnlToast.Attributes["aria-live"] = "polite";
+            litToastTitle.Text = "Process complete";
+            litToastMessage.Text = encodedMessage;
+            RegisterToastScript();
+        }
+        else if (returnToCommentForm)
+        {
+            pnlToast.CssClass = "jc-toast jc-toast-error";
+            pnlToast.Attributes["role"] = "alert";
+            pnlToast.Attributes["aria-live"] = "assertive";
+            litToastTitle.Text = "Please review your comment";
+            litToastMessage.Text = encodedMessage;
+            RegisterToastScript();
+            RegisterCommentFormFocusScript();
+        }
+        else
+        {
+            RegisterMessageFocusScript();
+        }
+    }
+
+    private void RegisterToastScript()
+    {
+        if (Page == null || pnlToast == null)
+        {
+            return;
+        }
+
+        var toastId = HttpUtility.JavaScriptStringEncode(pnlToast.ClientID);
+
+        var script = @"
+(function () {
+    var toast = document.getElementById('" + toastId + @"');
+    if (!toast || toast.getAttribute('data-jc-toast-ready') === 'true') { return; }
+
+    toast.setAttribute('data-jc-toast-ready', 'true');
+
+    var closeButton = toast.querySelector('.jc-toast-close');
+    var dismissed = false;
+
+    function dismissToast(event) {
+        if (event && event.preventDefault) { event.preventDefault(); }
+        if (dismissed) { return false; }
+
+        dismissed = true;
+        toast.classList.add('jc-toast-hidden');
+
+        window.setTimeout(function () {
+            toast.style.display = 'none';
+        }, 250);
+
+        return false;
+    }
+
+    if (closeButton) {
+        closeButton.onclick = dismissToast;
+    }
+
+    window.setTimeout(dismissToast, 12000);
+})();";
+
+        RegisterStartupScript("JacarandaCommentsToast_" + ModuleId, script);
     }
 
     private void RegisterMessageFocusScript()
@@ -1648,6 +1969,17 @@ WHERE CommentId = @CommentId
             "CommentForm");
     }
 
+    private void RegisterCommentTargetFocusScript(int commentId)
+    {
+        if (commentId <= 0)
+        {
+            return;
+        }
+
+        var anchorId = GetCommentAnchorId(commentId);
+        RegisterScrollAndFocusScript(anchorId, anchorId, "PublishedComment_" + commentId);
+    }
+
     private void RegisterScrollAndFocusScript(string targetClientId, string focusClientId, string keySuffix)
     {
         if (Page == null || String.IsNullOrWhiteSpace(targetClientId))
@@ -1661,13 +1993,16 @@ WHERE CommentId = @CommentId
         var script = @"
 (function () {
     var hasFocused = false;
-    var delays = [0, 150, 400, 800, 1400];
+    var attempts = 0;
+    var maximumAttempts = 60;
+    var retryDelay = 100;
+    var settleDelays = [0, 200, 600, 1200, 2200];
 
-    function focusAndScroll() {
+    function positionTarget() {
         var target = document.getElementById('" + targetId + @"');
         var focusTarget = document.getElementById('" + focusId + @"');
 
-        if (!target) { return; }
+        if (!target) { return false; }
 
         try {
             target.scrollIntoView({ behavior: 'auto', block: 'center' });
@@ -1684,18 +2019,42 @@ WHERE CommentId = @CommentId
 
             hasFocused = true;
         }
+
+        return true;
     }
 
-    function scheduleFocus() {
-        for (var i = 0; i < delays.length; i++) {
-            window.setTimeout(focusAndScroll, delays[i]);
+    function settleTarget() {
+        for (var i = 0; i < settleDelays.length; i++) {
+            window.setTimeout(positionTarget, settleDelays[i]);
         }
     }
 
-    scheduleFocus();
+    function findTarget() {
+        attempts += 1;
+
+        if (positionTarget()) {
+            settleTarget();
+            return;
+        }
+
+        if (attempts < maximumAttempts) {
+            window.setTimeout(findTarget, retryDelay);
+        }
+    }
+
+    function startTargeting() {
+        attempts = 0;
+        findTarget();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startTargeting);
+    } else {
+        startTargeting();
+    }
 
     if (window.addEventListener) {
-        window.addEventListener('load', scheduleFocus);
+        window.addEventListener('load', startTargeting);
     }
 })();";
 
@@ -1718,13 +2077,32 @@ WHERE CommentId = @CommentId
         <asp:Literal ID="litMessage" runat="server" />
     </asp:Panel>
 
+    <asp:Panel ID="pnlToast"
+               runat="server"
+               Visible="false"
+               CssClass="jc-toast"
+               role="status"
+               aria-live="polite"
+               aria-atomic="true">
+        <div class="jc-toast-content">
+            <strong class="jc-toast-title"><asp:Literal ID="litToastTitle" runat="server" /></strong>
+            <span class="jc-toast-message"><asp:Literal ID="litToastMessage" runat="server" /></span>
+        </div>
+        <button type="button"
+                class="jc-toast-close"
+                aria-label="Close notification"
+                onclick="var toast=this.parentNode;if(toast){toast.classList.add('jc-toast-hidden');window.setTimeout(function(){toast.style.display='none';},250);}return false;">&times;</button>
+    </asp:Panel>
+
     <asp:Panel ID="pnlNoComments" runat="server" CssClass="jc-empty" Visible="false">
         No comments yet.
     </asp:Panel>
 
     <asp:Repeater ID="rptComments" runat="server" OnItemCommand="rptComments_ItemCommand">
         <ItemTemplate>
-            <article class='jc-comment <%# CommentStatusCss(Eval("IsApproved")) %> <%# CommentDepthCss(Eval("Depth")) %>'>
+            <article id='<%# CommentAnchorId(Eval("CommentId")) %>'
+                     tabindex="-1"
+                     class='jc-comment <%# CommentStatusCss(Eval("IsApproved")) %> <%# CommentDepthCss(Eval("Depth")) %>'>
                 <header class="jc-comment-meta">
                     <strong class="jc-comment-author"><%# Encode(Eval("DisplayName")) %></strong>
                     <span class="jc-comment-date"><%# FormatDate(Eval("CreatedOnDate")) %></span>
@@ -1806,9 +2184,12 @@ WHERE CommentId = @CommentId
                          runat="server"
                          TextMode="MultiLine"
                          Rows="5"
-                         MaxLength="2000"
                          CssClass="jc-textarea"
                          autocomplete="off" />
+            <p id="commentLengthHelp" runat="server" class="jc-comment-length">
+                <asp:Literal ID="litCommentLimit" runat="server" />
+                <span id="spnCommentCounter" runat="server" class="jc-character-counter"></span>
+            </p>
         </div>
 
         <asp:Panel ID="pnlCaptcha" runat="server" CssClass="jc-field jc-captcha" Visible="false">
