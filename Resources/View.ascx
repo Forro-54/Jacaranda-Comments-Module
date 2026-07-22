@@ -533,6 +533,7 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
         ConfigureForm();
         EnsureCaptchaChallenge();
         BindComments();
+        RegisterCommentFormFocusScript();
     }
 
     protected void rptComments_ItemCommand(object source, System.Web.UI.WebControls.RepeaterCommandEventArgs e)
@@ -577,6 +578,7 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
             ConfigureForm();
             EnsureCaptchaChallenge();
             BindComments();
+            RegisterCommentFormFocusScript();
             return;
         }
 
@@ -586,15 +588,32 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
             return;
         }
 
+        string moderationMessage = String.Empty;
+        string moderationStatusCode = String.Empty;
+
         if (String.Equals(e.CommandName, "Approve", StringComparison.OrdinalIgnoreCase))
         {
             UpdateCommentApproval(commentId, true);
-            ShowMessage("Comment approved.", true);
+            moderationMessage = "Comment approved.";
+            moderationStatusCode = "comment-approved";
         }
         else if (String.Equals(e.CommandName, "Delete", StringComparison.OrdinalIgnoreCase))
         {
             SoftDeleteComment(commentId);
-            ShowMessage("Comment deleted.", true);
+            moderationMessage = "Comment deleted.";
+            moderationStatusCode = "comment-deleted";
+        }
+
+        if (!String.IsNullOrWhiteSpace(moderationMessage))
+        {
+            QueuePostRedirectMessage(moderationMessage, true);
+
+            if (TryRedirectAfterSuccessfulPost(moderationStatusCode))
+            {
+                return;
+            }
+
+            ShowMessage(moderationMessage, true);
         }
 
         ConfigureForm();
@@ -1295,10 +1314,10 @@ WHERE CommentId = @CommentId
 
         if (TryGetPostRedirectMessageFromQuery(out message, out success))
         {
-            ClearQueuedPostRedirectMessage();
             ShowMessage(message, success);
             ClearCommentEntryFields();
             RegisterClearCommentFormScript();
+            RegisterCleanPostRedirectUrlScript();
             return;
         }
 
@@ -1332,7 +1351,38 @@ WHERE CommentId = @CommentId
 
         message = GetPostRedirectStatusMessage(statusCode);
 
-        return !String.IsNullOrWhiteSpace(message);
+        if (String.IsNullOrWhiteSpace(message) || Session == null)
+        {
+            return false;
+        }
+
+        var rawQueuedMessage = Session[PostRedirectMessageSessionKey];
+
+        // A completion query string is valid only for the first redirected request
+        // that still has the matching one-time session message. This prevents a
+        // refresh, logout, or copied URL from recreating an old success message.
+        if (rawQueuedMessage == null)
+        {
+            return false;
+        }
+
+        var queuedMessage = Convert.ToString(rawQueuedMessage);
+        var rawSuccess = Session[PostRedirectSuccessSessionKey];
+
+        Session.Remove(PostRedirectMessageSessionKey);
+        Session.Remove(PostRedirectSuccessSessionKey);
+
+        if (!String.IsNullOrWhiteSpace(queuedMessage))
+        {
+            message = queuedMessage;
+        }
+
+        if (!Boolean.TryParse(Convert.ToString(rawSuccess), out success))
+        {
+            success = true;
+        }
+
+        return true;
     }
 
     private void ShowQueuedPostRedirectMessage()
@@ -1395,6 +1445,10 @@ WHERE CommentId = @CommentId
                 return "Your reply was received and is waiting for approval. You can refresh the page safely.";
             case "received":
                 return "Your comment has been received. You can refresh the page safely.";
+            case "comment-approved":
+                return "Comment approved. You can refresh the page safely.";
+            case "comment-deleted":
+                return "Comment deleted. You can refresh the page safely.";
             default:
                 return String.Empty;
         }
@@ -1409,6 +1463,37 @@ WHERE CommentId = @CommentId
 
         Session.Remove(PostRedirectMessageSessionKey);
         Session.Remove(PostRedirectSuccessSessionKey);
+    }
+
+    private void RegisterCleanPostRedirectUrlScript()
+    {
+        if (Page == null)
+        {
+            return;
+        }
+
+        string cleanUrl;
+
+        try
+        {
+            cleanUrl = AppendMessageAnchor(DotNetNuke.Common.Globals.NavigateURL(TabId, String.Empty));
+        }
+        catch
+        {
+            cleanUrl = "#" + PostRedirectMessageAnchorId;
+        }
+
+        var script = @"
+(function () {
+    if (!window.history || !window.history.replaceState) { return; }
+
+    try {
+        window.history.replaceState(null, document.title, '"
+            + HttpUtility.JavaScriptStringEncode(cleanUrl) + @"');
+    } catch (e) { }
+})();";
+
+        RegisterStartupScript("JacarandaCommentsCleanPostRedirectUrl_" + ModuleId, script);
     }
 
     private bool TryRedirectAfterSuccessfulPost(string statusCode)
@@ -1544,54 +1629,87 @@ WHERE CommentId = @CommentId
             ? "<strong>Process complete.</strong> " + encodedMessage
             : encodedMessage;
 
-        if (success)
-        {
-            RegisterMessageFocusScript();
-        }
+        RegisterMessageFocusScript();
     }
 
     private void RegisterMessageFocusScript()
     {
-        if (Page == null)
+        RegisterScrollAndFocusScript(
+            pnlMessage != null ? pnlMessage.ClientID : String.Empty,
+            pnlMessage != null ? pnlMessage.ClientID : String.Empty,
+            "Message");
+    }
+
+    private void RegisterCommentFormFocusScript()
+    {
+        RegisterScrollAndFocusScript(
+            pnlCommentForm != null ? pnlCommentForm.ClientID : String.Empty,
+            txtComment != null ? txtComment.ClientID : String.Empty,
+            "CommentForm");
+    }
+
+    private void RegisterScrollAndFocusScript(string targetClientId, string focusClientId, string keySuffix)
+    {
+        if (Page == null || String.IsNullOrWhiteSpace(targetClientId))
         {
             return;
         }
 
-        var anchorId = HttpUtility.JavaScriptStringEncode(PostRedirectMessageAnchorId);
-        var messageId = HttpUtility.JavaScriptStringEncode(pnlMessage.ClientID);
+        var targetId = HttpUtility.JavaScriptStringEncode(targetClientId);
+        var focusId = HttpUtility.JavaScriptStringEncode(focusClientId ?? String.Empty);
 
         var script = @"
 (function () {
-    var anchor = document.getElementById('" + anchorId + @"');
-    var message = document.getElementById('" + messageId + @"');
-    var target = message || anchor;
+    var hasFocused = false;
+    var delays = [0, 150, 400, 800, 1400];
 
-    if (!target) { return; }
+    function focusAndScroll() {
+        var target = document.getElementById('" + targetId + @"');
+        var focusTarget = document.getElementById('" + focusId + @"');
 
-    try {
-        target.focus({ preventScroll: true });
-    } catch (e) {
-        try { target.focus(); } catch (ignore) { }
+        if (!target) { return; }
+
+        try {
+            target.scrollIntoView({ behavior: 'auto', block: 'center' });
+        } catch (e) {
+            try { target.scrollIntoView(); } catch (ignoreScroll) { }
+        }
+
+        if (!hasFocused && focusTarget) {
+            try {
+                focusTarget.focus({ preventScroll: true });
+            } catch (e) {
+                try { focusTarget.focus(); } catch (ignoreFocus) { }
+            }
+
+            hasFocused = true;
+        }
     }
 
-    try {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } catch (e) {
-        target.scrollIntoView();
+    function scheduleFocus() {
+        for (var i = 0; i < delays.length; i++) {
+            window.setTimeout(focusAndScroll, delays[i]);
+        }
+    }
+
+    scheduleFocus();
+
+    if (window.addEventListener) {
+        window.addEventListener('load', scheduleFocus);
     }
 })();";
 
-        RegisterStartupScript("JacarandaCommentsFocusMessage" + ModuleId, script);
+        RegisterStartupScript(
+            "JacarandaCommentsFocus" + keySuffix + "_" + ModuleId,
+            script);
     }
 </script>
 
-<div class="jacaranda-comments">
+<div id="<%= PostRedirectMessageAnchorId %>" class="jacaranda-comments">
     <div class="jc-header">
         <h2>Comments</h2>
         <span class="jc-count"><asp:Literal ID="litCount" runat="server" /></span>
     </div>
-
-    <div id="<%= PostRedirectMessageAnchorId %>" class="jc-message-anchor"></div>
 
     <asp:Panel ID="pnlMessage"
                runat="server"

@@ -1,3 +1,26 @@
+Jacaranda Comments 01.00.14
+- Returns the page to the comment form when a registered user selects Reply.
+- Places keyboard focus in the comment text box after reply selection.
+- Uses repeated module-scoped scroll restoration so DNN page layout does not leave the user at the top after posting.
+- Returns validation, security-token, CAPTCHA, and rate-limit messages to view instead of leaving them below the fold.
+- Keeps posting, replies, moderation, rate limiting, CAPTCHA, notifications, and security checks unchanged.
+- No database schema changes.
+
+Jacaranda Comments 01.00.13
+- Redirects successful approval and deletion actions to a clean GET response.
+- Prevents browser form-resubmission prompts when refreshing after moderation.
+- Shows approval/deletion confirmation once after the redirect and then removes the completion parameters from the URL.
+- Keeps posting, replies, moderation permissions, rate limiting, CAPTCHA, notifications, and security-token behaviour unchanged.
+- No database schema changes.
+
+Jacaranda Comments 01.00.12
+- Makes successful comment/reply completion messages one-time instead of recreating them from a persistent query string on every refresh.
+- Requires the matching queued session message before accepting jcposted/jcmid completion parameters.
+- Removes completion parameters from the browser URL after the first redirected load while retaining the comments-module anchor.
+- Moves the redirect anchor onto the comments module container and defers focus/scroll until page load completes.
+- Keeps posting, moderation, rate limiting, CAPTCHA, notifications, approval, deletion, and security-token behaviour unchanged.
+- No database schema changes.
+
 Jacaranda Comments 01.00.11
 - Corrects the custom anti-CSRF/security-token lifecycle for comment, reply, approve, and delete postbacks.
 - Initialises the hidden security token only on the initial GET request, preserving the browser-submitted value during postback validation.

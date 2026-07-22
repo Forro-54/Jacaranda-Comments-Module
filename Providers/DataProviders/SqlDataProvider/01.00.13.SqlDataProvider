@@ -1,0 +1,4 @@
+-- Jacaranda Comments 01.00.13
+-- No database schema changes.
+-- This maintenance release redirects successful approval and deletion actions
+-- to a clean GET response so browser refresh does not resubmit moderation commands.

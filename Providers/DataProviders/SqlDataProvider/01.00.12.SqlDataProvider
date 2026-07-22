@@ -1,0 +1,4 @@
+-- Jacaranda Comments 01.00.12
+-- No database schema changes.
+-- This maintenance release makes post-completion messages one-time and
+-- improves the return focus/scroll position after successful posting.
