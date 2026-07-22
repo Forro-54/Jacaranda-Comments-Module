@@ -1,3 +1,9 @@
+Jacaranda Comments 01.00.11
+- Corrects the custom anti-CSRF/security-token lifecycle for comment, reply, approve, and delete postbacks.
+- Initialises the hidden security token only on the initial GET request, preserving the browser-submitted value during postback validation.
+- Keeps all existing posting, moderation, rate limiting, CAPTCHA, notification, and Post/Redirect/Get behaviour unchanged.
+- No database schema changes.
+
 Jacaranda Comments 01.00.10
 - Changes successful comment/reply submission to a server-side redirect using Response.Redirect(..., false) plus CompleteRequest().
 - Removes the previous dependence on the delayed client-side redirect for the normal success path.

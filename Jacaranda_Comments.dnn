@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <dotnetnuke type="Package" version="5.0">
   <packages>
-    <package name="Jacaranda_Comments" type="Module" version="01.00.10">
+    <package name="Jacaranda_Comments" type="Module" version="01.00.11">
       <friendlyName>Jacaranda Comments</friendlyName>
       <description>Page-level comments and replies module for DNN 10 with moderation, rate limiting, email notifications, and optional CAPTCHA.</description>
       <owner>
@@ -69,6 +69,11 @@
               <path>Providers\DataProviders\SqlDataProvider</path>
               <name>01.00.10.SqlDataProvider</name>
               <version>01.00.10</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.00.11.SqlDataProvider</name>
+              <version>01.00.11</version>
             </script>
             <script type="UnInstall">
               <path>Providers\DataProviders\SqlDataProvider</path>

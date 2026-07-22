@@ -133,10 +133,9 @@
 
     protected void Page_Load(object sender, EventArgs e)
     {
-        EnsureSecurityToken();
-
         if (!IsPostBack)
         {
+            EnsureSecurityToken();
             ConfigureForm();
             ClearReplyContext();
             ClearCommentEntryFields();

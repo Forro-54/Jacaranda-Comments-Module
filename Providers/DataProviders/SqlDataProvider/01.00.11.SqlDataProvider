@@ -1,0 +1,4 @@
+-- Jacaranda Comments 01.00.11
+-- No database schema changes.
+-- This security maintenance release corrects the custom postback token lifecycle
+-- so the submitted token is preserved and validated against the session token.
