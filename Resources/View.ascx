@@ -1926,14 +1926,96 @@ WHERE CommentId = @CommentId
 
     toast.setAttribute('data-jc-toast-ready', 'true');
 
+    var moduleRoot = null;
+    if (toast.closest) {
+        moduleRoot = toast.closest('.jacaranda-comments');
+    }
+
+    if (!moduleRoot) {
+        var current = toast.parentNode;
+        while (current && current !== document.body) {
+            if ((' ' + current.className + ' ').indexOf(' jacaranda-comments ') >= 0) {
+                moduleRoot = current;
+                break;
+            }
+            current = current.parentNode;
+        }
+    }
+
     var closeButton = toast.querySelector('.jc-toast-close');
     var dismissed = false;
+    var layoutQueued = false;
+    var autoDismissTimer = null;
+
+    function clamp(value, minimum, maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    function positionToast() {
+        layoutQueued = false;
+        if (dismissed || !moduleRoot) { return; }
+
+        var moduleRect = moduleRoot.getBoundingClientRect();
+        var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        var moduleWidth = moduleRoot.clientWidth || Math.max(0, moduleRect.width);
+        var moduleHeight = moduleRoot.clientHeight || Math.max(0, moduleRect.height);
+        var inset = 12;
+        var availableWidth = Math.max(0, moduleWidth - (inset * 2));
+        var toastWidth = Math.min(448, availableWidth);
+
+        if (toastWidth <= 0) { return; }
+
+        toast.style.width = toastWidth + 'px';
+        toast.style.maxWidth = toastWidth + 'px';
+        toast.style.left = Math.max(inset, moduleWidth - toastWidth - inset) + 'px';
+        toast.style.right = 'auto';
+
+        var maximumToastHeight = Math.max(120, Math.min(viewportHeight - (inset * 2), moduleHeight - (inset * 2)));
+        toast.style.maxHeight = maximumToastHeight + 'px';
+
+        var toastHeight = toast.offsetHeight;
+        var visibleTop = Math.max(moduleRect.top, inset);
+        var visibleBottom = Math.min(moduleRect.bottom, viewportHeight - inset);
+        var viewportTarget = visibleBottom > visibleTop
+            ? visibleTop + ((visibleBottom - visibleTop) / 2)
+            : viewportHeight / 2;
+
+        var topWithinModule = viewportTarget - moduleRect.top - (toastHeight / 2);
+        var maximumTop = Math.max(inset, moduleHeight - toastHeight - inset);
+        toast.style.top = clamp(topWithinModule, inset, maximumTop) + 'px';
+        toast.classList.add('jc-toast-positioned');
+    }
+
+    function queuePositionToast() {
+        if (dismissed || layoutQueued) { return; }
+        layoutQueued = true;
+
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(positionToast);
+        } else {
+            window.setTimeout(positionToast, 16);
+        }
+    }
+
+    function removePositionListeners() {
+        if (window.removeEventListener) {
+            window.removeEventListener('resize', queuePositionToast);
+            window.removeEventListener('scroll', queuePositionToast);
+        }
+    }
 
     function dismissToast(event) {
         if (event && event.preventDefault) { event.preventDefault(); }
         if (dismissed) { return false; }
 
         dismissed = true;
+
+        if (autoDismissTimer) {
+            window.clearTimeout(autoDismissTimer);
+            autoDismissTimer = null;
+        }
+
+        removePositionListeners();
         toast.classList.add('jc-toast-hidden');
 
         window.setTimeout(function () {
@@ -1947,7 +2029,16 @@ WHERE CommentId = @CommentId
         closeButton.onclick = dismissToast;
     }
 
-    window.setTimeout(dismissToast, 12000);
+    if (window.addEventListener) {
+        window.addEventListener('resize', queuePositionToast);
+        window.addEventListener('scroll', queuePositionToast, { passive: true });
+        window.addEventListener('load', queuePositionToast);
+    }
+
+    queuePositionToast();
+    window.setTimeout(queuePositionToast, 150);
+    window.setTimeout(queuePositionToast, 500);
+    autoDismissTimer = window.setTimeout(dismissToast, 12000);
 })();";
 
         RegisterStartupScript("JacarandaCommentsToast_" + ModuleId, script);
@@ -2084,6 +2175,7 @@ WHERE CommentId = @CommentId
                role="status"
                aria-live="polite"
                aria-atomic="true">
+        <span class="jc-toast-icon" aria-hidden="true"></span>
         <div class="jc-toast-content">
             <strong class="jc-toast-title"><asp:Literal ID="litToastTitle" runat="server" /></strong>
             <span class="jc-toast-message"><asp:Literal ID="litToastMessage" runat="server" /></span>

@@ -1,4 +1,12 @@
-﻿Jacaranda Comments 01.00.19
+﻿Jacaranda Comments 01.00.20
+- Positions success and posting-error notifications within the visible area of the Jacaranda Comments module that generated them.
+- Keeps notifications inside the module column so they do not cover neighbouring article or content columns on multi-pane DNN pages.
+- Recalculates notification position while scrolling or resizing, including long side-by-side article/comment layouts.
+- Adds a strong four-pixel success/error border, enhanced shadow, status icon, and larger keyboard-visible close control.
+- Preserves the existing 12-second automatic dismissal, direct close fallback, inline message fallback, posting, moderation, and exact return-to-item behaviour.
+- No database schema changes.
+
+Jacaranda Comments 01.00.19
 - Binds and renders the current comment thread before registering post-completion targeting.
 - Retries exact comment/reply targeting until the rendered nested item is available in the DNN page lifecycle.
 - Extends settling passes so later DNN layout changes do not pull the page away from an immediately published reply.

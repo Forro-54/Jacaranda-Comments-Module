@@ -1,0 +1,3 @@
+﻿-- Jacaranda Comments 01.00.20
+-- No database schema changes are required for this maintenance release.
+-- Notifications now use stronger accessible styling and remain positioned within the visible area of their own module instance.
