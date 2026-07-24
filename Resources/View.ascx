@@ -7,6 +7,7 @@
 <%@ Import Namespace="System.Security.Cryptography" %>
 <%@ Import Namespace="System.Net.Mail" %>
 <%@ Import Namespace="System.Web" %>
+<%@ Import Namespace="System.Web.Security" %>
 <%@ Import Namespace="DotNetNuke.Common" %>
 <%@ Import Namespace="DotNetNuke.Common.Utilities" %>
 <%@ Import Namespace="DotNetNuke.Data" %>
@@ -18,6 +19,12 @@
     private const int MinimumMaximumCommentLength = 250;
     private const int MaximumMaximumCommentLength = 10000;
     private const int MinCommentLength = 3;
+    private const int MinimumGuestDisplayNameLength = 2;
+    private const int MaximumGuestDisplayNameLength = 100;
+    private const int MaximumGuestEmailLength = 254;
+    private const int RegisteredEditWindowMinutes = 15;
+    private const int MaximumBlockedTermCount = 250;
+    private const int MaximumBlockedTermLength = 100;
     private const string SettingPrefix = "JacarandaComments_";
     private const string CaptchaAnswerViewStateKey = "JacarandaComments_CaptchaAnswer";
     private const string SecurityTokenSessionKeyPrefix = "JacarandaComments_SecurityToken_";
@@ -84,9 +91,24 @@
         get { return Config.GetConnectionString(); }
     }
 
-    protected bool CanPostComments
+    protected bool IsRegisteredCommentUser
     {
         get { return UserInfo != null && UserId > -1 && !UserInfo.IsDeleted; }
+    }
+
+    private bool AllowGuestComments
+    {
+        get { return GetModuleSettingBool("AllowGuestComments", false); }
+    }
+
+    protected bool CanPostComments
+    {
+        get { return IsRegisteredCommentUser || AllowGuestComments; }
+    }
+
+    private bool IsGuestPoster
+    {
+        get { return CanPostComments && !IsRegisteredCommentUser; }
     }
 
     protected bool CanModerateComments()
@@ -97,6 +119,16 @@
     private bool RequireApprovalForNonEditors
     {
         get { return GetModuleSettingBool("RequireApprovalForNonEditors", true); }
+    }
+
+    private bool EnableLanguageFilter
+    {
+        get { return GetModuleSettingBool("EnableLanguageFilter", false); }
+    }
+
+    private string BlockedLanguageTerms
+    {
+        get { return GetModuleSettingString("BlockedLanguageTerms", String.Empty); }
     }
 
     private int MaximumCommentLength
@@ -163,6 +195,7 @@
             EnsureSecurityToken();
             ConfigureForm();
             ClearReplyContext();
+            ClearEditContext();
             ClearCommentEntryFields();
             EnsureCaptchaChallenge();
             BindComments();
@@ -258,12 +291,21 @@
 
     private void ConfigureForm()
     {
+        var isRegisteredUser = IsRegisteredCommentUser;
+        var isGuest = IsGuestPoster;
+
         pnlCommentForm.Visible = CanPostComments;
         pnlLoginRequired.Visible = !CanPostComments;
+        pnlGuestEmail.Visible = isGuest;
+        pnlGuestNotice.Visible = isGuest;
         pnlCaptcha.Visible = CaptchaAppliesToCurrentUser;
         litModerationNote.Text = BuildModerationNote();
 
-        txtDisplayName.ReadOnly = true;
+        txtDisplayName.ReadOnly = isRegisteredUser;
+        txtDisplayName.Attributes["autocomplete"] = isGuest ? "name" : "off";
+        txtDisplayName.Attributes["aria-required"] = isGuest ? "true" : "false";
+        txtGuestEmail.Attributes["autocomplete"] = "email";
+        txtGuestEmail.Attributes["aria-required"] = isGuest ? "true" : "false";
 
         var maximumCommentLength = MaximumCommentLength;
         // Do not apply the browser maxlength attribute. Some browsers silently
@@ -279,9 +321,10 @@
         txtCaptcha.Attributes["autocomplete"] = "off";
         txtWebsite.Attributes["autocomplete"] = "off";
 
-        if (CanPostComments)
+        if (isRegisteredUser)
         {
             txtDisplayName.Text = GetCurrentUserDisplayName();
+            txtGuestEmail.Text = String.Empty;
         }
 
         RegisterCharacterCounterScript(maximumCommentLength);
@@ -309,22 +352,26 @@
             command.CommandText = @"
 SELECT CommentId,
        ParentCommentId,
+       UserId,
        DisplayName,
        CommentText,
        IsApproved,
-       CreatedOnDate
+       IsLanguageFlagged,
+       CreatedOnDate,
+       EditedOnDate
 FROM " + CommentsTable + @"
 WHERE PortalId = @PortalId
   AND TabId = @TabId
   AND ModuleId = @ModuleId
   AND IsDeleted = 0
-  AND (IsApproved = 1 OR @CanModerate = 1)
+  AND (IsApproved = 1 OR @CanModerate = 1 OR (@CurrentUserId > -1 AND UserId = @CurrentUserId))
 ORDER BY CreatedOnDate ASC;";
 
             command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
             command.Parameters.Add("@TabId", SqlDbType.Int).Value = TabId;
             command.Parameters.Add("@ModuleId", SqlDbType.Int).Value = ModuleId;
             command.Parameters.Add("@CanModerate", SqlDbType.Bit).Value = CanModerateComments();
+            command.Parameters.Add("@CurrentUserId", SqlDbType.Int).Value = UserId;
 
             using (var adapter = new SqlDataAdapter(command))
             {
@@ -409,6 +456,8 @@ ORDER BY CreatedOnDate ASC;";
         if (!String.IsNullOrWhiteSpace(txtWebsite.Text))
         {
             ClearCommentEntryFields();
+            ClearReplyContext();
+            ClearEditContext();
             GenerateCaptchaChallenge();
 
             var honeypotMessage = "Your comment has been received. You can refresh the page safely.";
@@ -426,12 +475,89 @@ ORDER BY CreatedOnDate ASC;";
             return;
         }
 
-        var displayName = GetCurrentUserDisplayName();
+        int editCommentId;
+        var hasEditCommentId = TryGetSelectedEditCommentId(out editCommentId);
+
+        if (!String.IsNullOrWhiteSpace(hdnEditCommentId.Value) && !hasEditCommentId)
+        {
+            ShowPostingValidationMessage("The comment selected for editing could not be found.");
+            ConfigureForm();
+            BindComments();
+            return;
+        }
+
+        if (hasEditCommentId && !IsRegisteredCommentUser)
+        {
+            ClearEditContext();
+            ShowPostingValidationMessage("Guest comments cannot be edited. Register or sign in before posting to receive the 15-minute edit window.");
+            ConfigureForm();
+            BindComments();
+            return;
+        }
+
+        var isGuest = IsGuestPoster;
+        var displayName = IsRegisteredCommentUser
+            ? GetCurrentUserDisplayName()
+            : NormalizeSingleLineText(txtDisplayName.Text);
+        var guestEmail = isGuest ? (txtGuestEmail.Text ?? String.Empty).Trim() : String.Empty;
+        var protectedGuestEmail = String.Empty;
+        var guestRateLimitKey = String.Empty;
+
+        if (isGuest)
+        {
+            if (displayName.Length < MinimumGuestDisplayNameLength)
+            {
+                RestoreFormContextFromHiddenFields();
+                ShowPostingValidationMessage("Please enter the name you want shown with your guest comment.");
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            if (displayName.Length > MaximumGuestDisplayNameLength)
+            {
+                RestoreFormContextFromHiddenFields();
+                ShowPostingValidationMessage("Please shorten your guest name to 100 characters or fewer.");
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            if (guestEmail.Length > MaximumGuestEmailLength || !IsValidEmailAddress(guestEmail))
+            {
+                RestoreFormContextFromHiddenFields();
+                ShowPostingValidationMessage("Please enter a valid email address. It will not be displayed publicly.");
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            if (!TryProtectGuestEmail(guestEmail, out protectedGuestEmail))
+            {
+                RestoreFormContextFromHiddenFields();
+                ShowPostingValidationMessage("Your private email address could not be protected, so the guest comment was not saved. Please try again later or sign in before posting.");
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            guestRateLimitKey = ComputeGuestRateLimitKey();
+
+            if (String.IsNullOrWhiteSpace(guestRateLimitKey))
+            {
+                RestoreFormContextFromHiddenFields();
+                ShowPostingValidationMessage("A secure guest posting session could not be confirmed. Please refresh the page and try again.");
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+        }
+
         var commentText = (txtComment.Text ?? String.Empty).Trim();
 
         if (commentText.Length < MinCommentLength)
         {
-            RestoreReplyContextFromHiddenField();
+            RestoreFormContextFromHiddenFields();
             ShowPostingValidationMessage("Please enter a longer comment.");
             ConfigureForm();
             BindComments();
@@ -442,7 +568,7 @@ ORDER BY CreatedOnDate ASC;";
 
         if (commentText.Length > maximumCommentLength)
         {
-            RestoreReplyContextFromHiddenField();
+            RestoreFormContextFromHiddenFields();
             ShowPostingValidationMessage(
                 "Your comment is too long. Please shorten it to "
                 + maximumCommentLength.ToString("N0")
@@ -452,10 +578,14 @@ ORDER BY CreatedOnDate ASC;";
             return;
         }
 
+        // The configured terms are private module settings. A match never alters
+        // or rejects the submitted text; it only forces the item into moderation.
+        var languageFlagged = ContainsBlockedLanguage(commentText);
+
         string captchaError;
         if (!ValidateCaptcha(out captchaError))
         {
-            RestoreReplyContextFromHiddenField();
+            RestoreFormContextFromHiddenFields();
             GenerateCaptchaChallenge();
             ShowPostingValidationMessage(captchaError);
             ConfigureForm();
@@ -463,10 +593,74 @@ ORDER BY CreatedOnDate ASC;";
             return;
         }
 
-        string rateLimitError;
-        if (!CheckRateLimit(out rateLimitError))
+        if (hasEditCommentId)
         {
-            RestoreReplyContextFromHiddenField();
+            bool editedCommentIsReply;
+            bool editedCommentIsApproved;
+            string editError;
+
+            if (!TryUpdateOwnComment(
+                editCommentId,
+                commentText,
+                languageFlagged,
+                out editedCommentIsReply,
+                out editedCommentIsApproved,
+                out editError))
+            {
+                ShowPostingValidationMessage(editError);
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            SendNotificationEmail(
+                editCommentId,
+                editedCommentIsReply,
+                editedCommentIsApproved,
+                displayName,
+                commentText,
+                false,
+                String.Empty,
+                true,
+                languageFlagged);
+
+            ClearCommentEntryFields();
+            ClearReplyContext();
+            ClearEditContext();
+            GenerateCaptchaChallenge();
+            RegisterClearCommentFormScript();
+
+            var editSuccessMessage = editedCommentIsApproved
+                ? (editedCommentIsReply
+                    ? "Your reply changes have been saved. You can refresh the page safely."
+                    : "Your comment changes have been saved. You can refresh the page safely.")
+                : (editedCommentIsReply
+                    ? "Your reply changes were saved and are waiting for approval. You can refresh the page safely."
+                    : "Your comment changes were saved and are waiting for approval. You can refresh the page safely.");
+
+            var editStatusCode = editedCommentIsReply
+                ? (editedCommentIsApproved ? "reply-edited" : "reply-edit-pending")
+                : (editedCommentIsApproved ? "comment-edited" : "comment-edit-pending");
+
+            QueuePostRedirectMessage(editSuccessMessage, true, editCommentId);
+
+            if (TryRedirectAfterSuccessfulPost(editStatusCode, editCommentId))
+            {
+                return;
+            }
+
+            ShowMessage(editSuccessMessage, true);
+            ConfigureForm();
+            BindComments();
+            RegisterCommentTargetFocusScript(editCommentId);
+            RegisterClearCommentFormScript();
+            return;
+        }
+
+        string rateLimitError;
+        if (!CheckRateLimit(isGuest, guestRateLimitKey, out rateLimitError))
+        {
+            RestoreFormContextFromHiddenFields();
             ShowPostingValidationMessage(rateLimitError);
             ConfigureForm();
             BindComments();
@@ -485,7 +679,11 @@ ORDER BY CreatedOnDate ASC;";
             return;
         }
 
-        var autoApprove = CanModerateComments() || !RequireApprovalForNonEditors;
+        // Guest submissions are always held for approval. Browser-supplied values
+        // never decide approval state.
+        var autoApprove = !languageFlagged
+            && !isGuest
+            && (CanModerateComments() || !RequireApprovalForNonEditors);
         var newCommentId = 0;
 
         using (var connection = new SqlConnection(ConnectionString))
@@ -499,8 +697,11 @@ INSERT INTO " + CommentsTable + @" (
     ParentCommentId,
     UserId,
     DisplayName,
+    GuestEmailEncrypted,
+    GuestRateLimitKey,
     CommentText,
     IsApproved,
+    IsLanguageFlagged,
     IsDeleted,
     CreatedOnDate,
     CreatedByUserId
@@ -512,8 +713,11 @@ VALUES (
     @ParentCommentId,
     @UserId,
     @DisplayName,
+    @GuestEmailEncrypted,
+    @GuestRateLimitKey,
     @CommentText,
     @IsApproved,
+    @IsLanguageFlagged,
     0,
     GETUTCDATE(),
     @CreatedByUserId
@@ -528,20 +732,42 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
             var parentParameter = command.Parameters.Add("@ParentCommentId", SqlDbType.Int);
             parentParameter.Value = parentCommentId.HasValue ? (object)parentCommentId.Value : DBNull.Value;
 
-            command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
-            command.Parameters.Add("@DisplayName", SqlDbType.NVarChar, 100).Value = Truncate(displayName, 100);
+            var userParameter = command.Parameters.Add("@UserId", SqlDbType.Int);
+            userParameter.Value = isGuest ? (object)DBNull.Value : UserId;
+
+            command.Parameters.Add("@DisplayName", SqlDbType.NVarChar, MaximumGuestDisplayNameLength).Value = Truncate(displayName, MaximumGuestDisplayNameLength);
+
+            var guestEmailParameter = command.Parameters.Add("@GuestEmailEncrypted", SqlDbType.NVarChar, 2048);
+            guestEmailParameter.Value = isGuest ? (object)protectedGuestEmail : DBNull.Value;
+
+            var guestRateParameter = command.Parameters.Add("@GuestRateLimitKey", SqlDbType.NVarChar, 64);
+            guestRateParameter.Value = isGuest ? (object)guestRateLimitKey : DBNull.Value;
+
             command.Parameters.Add("@CommentText", SqlDbType.NVarChar, maximumCommentLength).Value = commentText;
             command.Parameters.Add("@IsApproved", SqlDbType.Bit).Value = autoApprove;
-            command.Parameters.Add("@CreatedByUserId", SqlDbType.Int).Value = UserId;
+            command.Parameters.Add("@IsLanguageFlagged", SqlDbType.Bit).Value = languageFlagged;
+
+            var createdByParameter = command.Parameters.Add("@CreatedByUserId", SqlDbType.Int);
+            createdByParameter.Value = isGuest ? (object)DBNull.Value : UserId;
 
             connection.Open();
             newCommentId = Convert.ToInt32(command.ExecuteScalar());
         }
 
-        SendNotificationEmail(newCommentId, parentCommentId.HasValue, autoApprove, displayName, commentText);
+        SendNotificationEmail(
+            newCommentId,
+            parentCommentId.HasValue,
+            autoApprove,
+            displayName,
+            commentText,
+            isGuest,
+            guestEmail,
+            false,
+            languageFlagged);
 
         ClearCommentEntryFields();
         ClearReplyContext();
+        ClearEditContext();
         GenerateCaptchaChallenge();
         RegisterClearCommentFormScript();
 
@@ -555,7 +781,10 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
 
         var statusCode = GetPostRedirectStatusCode(parentCommentId.HasValue, autoApprove);
 
-        var redirectTargetCommentId = autoApprove ? (int?)newCommentId : null;
+        // Registered authors can see their own pending submissions. Guest pending
+        // submissions remain at the confirmation message because no public identity
+        // is available after redirect.
+        var redirectTargetCommentId = !isGuest ? (int?)newCommentId : null;
 
         QueuePostRedirectMessage(successMessage, true, redirectTargetCommentId);
 
@@ -587,6 +816,16 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
         RegisterCommentFormFocusScript();
     }
 
+    protected void btnCancelEdit_Click(object sender, EventArgs e)
+    {
+        pnlMessage.Visible = false;
+        ClearEditContext();
+        ConfigureForm();
+        EnsureCaptchaChallenge();
+        BindComments();
+        RegisterCommentFormFocusScript();
+    }
+
     protected void rptComments_ItemCommand(object source, System.Web.UI.WebControls.RepeaterCommandEventArgs e)
     {
         pnlMessage.Visible = false;
@@ -606,11 +845,45 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
             return;
         }
 
+        if (String.Equals(e.CommandName, "EditComment", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!IsRegisteredCommentUser)
+            {
+                ShowMessage("Guest comments cannot be edited. Register or sign in before posting to receive the 15-minute edit window.", false);
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            string editableCommentText;
+            bool editableCommentIsReply;
+            string editError;
+
+            if (!TryLoadEditableComment(
+                commentId,
+                out editableCommentText,
+                out editableCommentIsReply,
+                out editError))
+            {
+                ShowMessage(editError, false);
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
+            SetEditContext(commentId, editableCommentIsReply, editableCommentText, true);
+            ConfigureForm();
+            EnsureCaptchaChallenge();
+            BindComments();
+            RegisterCommentFormFocusScript();
+            return;
+        }
+
         if (String.Equals(e.CommandName, "ReplyTo", StringComparison.OrdinalIgnoreCase))
         {
             if (!CanPostComments)
             {
-                ShowMessage("Please sign in before replying.", false);
+                ShowMessage("Please sign in before replying, or enable guest commenting in this module's settings.", false);
                 ConfigureForm();
                 BindComments();
                 return;
@@ -669,6 +942,146 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
 
         ConfigureForm();
         BindComments();
+    }
+
+    private bool TryGetSelectedEditCommentId(out int commentId)
+    {
+        commentId = 0;
+        var rawCommentId = (hdnEditCommentId.Value ?? String.Empty).Trim();
+
+        return !String.IsNullOrWhiteSpace(rawCommentId)
+            && Int32.TryParse(rawCommentId, out commentId)
+            && commentId > 0;
+    }
+
+    private bool TryLoadEditableComment(
+        int commentId,
+        out string commentText,
+        out bool isReply,
+        out string errorMessage)
+    {
+        commentText = String.Empty;
+        isReply = false;
+        errorMessage = "That comment cannot be edited.";
+
+        if (!IsRegisteredCommentUser || commentId <= 0)
+        {
+            return false;
+        }
+
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+SELECT TOP 1 CommentText,
+       ParentCommentId,
+       CreatedOnDate
+FROM " + CommentsTable + @"
+WHERE CommentId = @CommentId
+  AND PortalId = @PortalId
+  AND TabId = @TabId
+  AND ModuleId = @ModuleId
+  AND UserId = @UserId
+  AND IsDeleted = 0;";
+
+            command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            command.Parameters.Add("@TabId", SqlDbType.Int).Value = TabId;
+            command.Parameters.Add("@ModuleId", SqlDbType.Int).Value = ModuleId;
+            command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
+
+            connection.Open();
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return false;
+                }
+
+                var createdOnUtc = DateTime.SpecifyKind(
+                    Convert.ToDateTime(reader["CreatedOnDate"]),
+                    DateTimeKind.Utc);
+
+                if (DateTime.UtcNow > createdOnUtc.AddMinutes(RegisteredEditWindowMinutes))
+                {
+                    errorMessage = "The 15-minute editing window for this comment has expired.";
+                    return false;
+                }
+
+                commentText = Convert.ToString(reader["CommentText"]);
+                isReply = reader["ParentCommentId"] != DBNull.Value;
+                return true;
+            }
+        }
+    }
+
+    private bool TryUpdateOwnComment(
+        int commentId,
+        string commentText,
+        bool languageFlagged,
+        out bool isReply,
+        out bool isApproved,
+        out string errorMessage)
+    {
+        isReply = false;
+        isApproved = false;
+        errorMessage = "The comment could not be updated. The 15-minute editing window may have expired.";
+
+        if (!IsRegisteredCommentUser || commentId <= 0)
+        {
+            return false;
+        }
+
+        var approvalAfterEdit = !languageFlagged
+            && (CanModerateComments() || !RequireApprovalForNonEditors);
+
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+UPDATE " + CommentsTable + @"
+SET CommentText = @CommentText,
+    IsApproved = @IsApproved,
+    IsLanguageFlagged = @IsLanguageFlagged,
+    EditedOnDate = GETUTCDATE(),
+    EditedByUserId = @UserId,
+    LastModifiedOnDate = GETUTCDATE(),
+    LastModifiedByUserId = @UserId
+OUTPUT inserted.ParentCommentId,
+       inserted.IsApproved
+WHERE CommentId = @CommentId
+  AND PortalId = @PortalId
+  AND TabId = @TabId
+  AND ModuleId = @ModuleId
+  AND UserId = @UserId
+  AND IsDeleted = 0
+  AND CreatedOnDate >= DATEADD(MINUTE, -@EditWindowMinutes, GETUTCDATE());";
+
+            command.Parameters.Add("@CommentText", SqlDbType.NVarChar, MaximumCommentLength).Value = commentText;
+            command.Parameters.Add("@IsApproved", SqlDbType.Bit).Value = approvalAfterEdit;
+            command.Parameters.Add("@IsLanguageFlagged", SqlDbType.Bit).Value = languageFlagged;
+            command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
+            command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            command.Parameters.Add("@TabId", SqlDbType.Int).Value = TabId;
+            command.Parameters.Add("@ModuleId", SqlDbType.Int).Value = ModuleId;
+            command.Parameters.Add("@EditWindowMinutes", SqlDbType.Int).Value = RegisteredEditWindowMinutes;
+
+            connection.Open();
+
+            using (var reader = command.ExecuteReader())
+            {
+                if (!reader.Read())
+                {
+                    return false;
+                }
+
+                isReply = reader["ParentCommentId"] != DBNull.Value;
+                isApproved = Convert.ToBoolean(reader["IsApproved"]);
+                return true;
+            }
+        }
     }
 
     private bool TryGetSelectedParentComment(out int? parentCommentId, out string displayName)
@@ -747,6 +1160,7 @@ WHERE CommentId = @CommentId
 
     private void SetReplyContext(int parentCommentId, string displayName)
     {
+        ClearEditContext();
         hdnParentCommentId.Value = parentCommentId.ToString();
         pnlReplyContext.Visible = true;
         litReplyContext.Text = "Replying to " + Server.HtmlEncode(displayName);
@@ -759,8 +1173,62 @@ WHERE CommentId = @CommentId
         hdnParentCommentId.Value = String.Empty;
         pnlReplyContext.Visible = false;
         litReplyContext.Text = String.Empty;
-        litFormTitle.Text = "Leave a comment";
-        btnSubmit.Text = "Post comment";
+
+        if (hdnEditCommentId == null || String.IsNullOrWhiteSpace(hdnEditCommentId.Value))
+        {
+            litFormTitle.Text = "Leave a comment";
+            btnSubmit.Text = "Post comment";
+        }
+    }
+
+    private void SetEditContext(int commentId, bool isReply, string commentText, bool replaceCommentText)
+    {
+        ClearReplyContext();
+        hdnEditCommentId.Value = commentId.ToString();
+        pnlEditContext.Visible = true;
+        litEditContext.Text = isReply
+            ? "Editing your reply. Changes must be saved within 15 minutes of the original post."
+            : "Editing your comment. Changes must be saved within 15 minutes of the original post.";
+        litFormTitle.Text = isReply ? "Edit your reply" : "Edit your comment";
+        btnSubmit.Text = "Save changes";
+
+        if (replaceCommentText)
+        {
+            txtComment.Text = commentText ?? String.Empty;
+        }
+    }
+
+    private void ClearEditContext()
+    {
+        hdnEditCommentId.Value = String.Empty;
+        pnlEditContext.Visible = false;
+        litEditContext.Text = String.Empty;
+
+        if (hdnParentCommentId == null || String.IsNullOrWhiteSpace(hdnParentCommentId.Value))
+        {
+            litFormTitle.Text = "Leave a comment";
+            btnSubmit.Text = "Post comment";
+        }
+    }
+
+    private void RestoreFormContextFromHiddenFields()
+    {
+        int editCommentId;
+
+        if (TryGetSelectedEditCommentId(out editCommentId) && IsRegisteredCommentUser)
+        {
+            string existingText;
+            bool isReply;
+            string errorMessage;
+
+            if (TryLoadEditableComment(editCommentId, out existingText, out isReply, out errorMessage))
+            {
+                SetEditContext(editCommentId, isReply, existingText, false);
+                return;
+            }
+        }
+
+        RestoreReplyContextFromHiddenField();
     }
 
     private void ClearCommentEntryFields()
@@ -768,6 +1236,12 @@ WHERE CommentId = @CommentId
         txtComment.Text = String.Empty;
         txtCaptcha.Text = String.Empty;
         txtWebsite.Text = String.Empty;
+
+        if (!IsRegisteredCommentUser)
+        {
+            txtDisplayName.Text = String.Empty;
+            txtGuestEmail.Text = String.Empty;
+        }
     }
 
 
@@ -873,6 +1347,11 @@ WHERE CommentId = @CommentId
             return;
         }
 
+        var guestFieldCleanup = IsRegisteredCommentUser
+            ? String.Empty
+            : "clearField('" + HttpUtility.JavaScriptStringEncode(txtDisplayName.ClientID) + "');\n"
+                + "clearField('" + HttpUtility.JavaScriptStringEncode(txtGuestEmail.ClientID) + "');\n";
+
         var script = @"
 (function () {
     function clearField(id) {
@@ -888,12 +1367,103 @@ WHERE CommentId = @CommentId
     clearField('" + HttpUtility.JavaScriptStringEncode(txtComment.ClientID) + @"');
     clearField('" + HttpUtility.JavaScriptStringEncode(txtCaptcha.ClientID) + @"');
     clearField('" + HttpUtility.JavaScriptStringEncode(txtWebsite.ClientID) + @"');
+    " + guestFieldCleanup + @"
 })();";
 
         RegisterStartupScript("JacarandaCommentsClearForm_" + ModuleId, script);
     }
 
-    private bool CheckRateLimit(out string errorMessage)
+    private bool ContainsBlockedLanguage(string commentText)
+    {
+        if (!EnableLanguageFilter || String.IsNullOrWhiteSpace(commentText))
+        {
+            return false;
+        }
+
+        var normalizedComment = NormalizeLanguageFilterText(commentText);
+
+        if (normalizedComment.Length == 0)
+        {
+            return false;
+        }
+
+        var searchableComment = " " + normalizedComment + " ";
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var rawTerms = BlockedLanguageTerms.Replace("\r\n", "\n").Replace('\r', '\n')
+            .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var acceptedTermCount = 0;
+
+        foreach (var rawTerm in rawTerms)
+        {
+            var term = (rawTerm ?? String.Empty).Trim();
+
+            if (term.Length > MaximumBlockedTermLength)
+            {
+                term = term.Substring(0, MaximumBlockedTermLength);
+            }
+
+            var normalizedTerm = NormalizeLanguageFilterText(term);
+
+            if (normalizedTerm.Length == 0 || !seen.Add(normalizedTerm))
+            {
+                continue;
+            }
+
+            acceptedTermCount++;
+
+            if (searchableComment.IndexOf(" " + normalizedTerm + " ", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            if (acceptedTermCount >= MaximumBlockedTermCount)
+            {
+                break;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeLanguageFilterText(string value)
+    {
+        if (String.IsNullOrWhiteSpace(value))
+        {
+            return String.Empty;
+        }
+
+        string normalized;
+
+        try
+        {
+            normalized = value.Normalize(NormalizationForm.FormKC).ToLowerInvariant();
+        }
+        catch (ArgumentException)
+        {
+            normalized = value.ToLowerInvariant();
+        }
+
+        var output = new StringBuilder(normalized.Length);
+        var previousWasSeparator = true;
+
+        foreach (var character in normalized)
+        {
+            if (Char.IsLetterOrDigit(character))
+            {
+                output.Append(character);
+                previousWasSeparator = false;
+            }
+            else if (!previousWasSeparator)
+            {
+                output.Append(' ');
+                previousWasSeparator = true;
+            }
+        }
+
+        return output.ToString().Trim();
+    }
+
+    private bool CheckRateLimit(bool isGuest, string guestRateLimitKey, out string errorMessage)
     {
         errorMessage = String.Empty;
 
@@ -914,12 +1484,17 @@ SELECT COUNT(1) AS RecentPostCount,
        ISNULL(DATEDIFF(SECOND, MAX(CreatedOnDate), GETUTCDATE()), 999999) AS SecondsSinceLastPost
 FROM " + CommentsTable + @"
 WHERE PortalId = @PortalId
-  AND CreatedByUserId = @UserId
   AND IsDeleted = 0
+  AND ((@IsGuest = 0 AND CreatedByUserId = @UserId)
+       OR (@IsGuest = 1 AND GuestRateLimitKey = @GuestRateLimitKey))
   AND CreatedOnDate >= DATEADD(MINUTE, -@WindowMinutes, GETUTCDATE());";
 
             command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
             command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
+            command.Parameters.Add("@IsGuest", SqlDbType.Bit).Value = isGuest;
+            command.Parameters.Add("@GuestRateLimitKey", SqlDbType.NVarChar, 64).Value = isGuest
+                ? (object)(guestRateLimitKey ?? String.Empty)
+                : DBNull.Value;
             command.Parameters.Add("@WindowMinutes", SqlDbType.Int).Value = windowMinutes;
 
             connection.Open();
@@ -948,6 +1523,119 @@ WHERE PortalId = @PortalId
         }
 
         return true;
+    }
+
+    private string NormalizeSingleLineText(string value)
+    {
+        value = (value ?? String.Empty).Trim();
+
+        if (String.IsNullOrWhiteSpace(value))
+        {
+            return String.Empty;
+        }
+
+        var output = new StringBuilder(value.Length);
+        var previousWasWhitespace = false;
+
+        foreach (var character in value)
+        {
+            if (Char.IsControl(character) || Char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                {
+                    output.Append(' ');
+                    previousWasWhitespace = true;
+                }
+            }
+            else
+            {
+                output.Append(character);
+                previousWasWhitespace = false;
+            }
+        }
+
+        return output.ToString().Trim();
+    }
+
+    private bool TryProtectGuestEmail(string email, out string protectedEmail)
+    {
+        protectedEmail = String.Empty;
+
+        if (String.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        try
+        {
+            var emailBytes = Encoding.UTF8.GetBytes(email.Trim());
+            var protectedBytes = MachineKey.Protect(
+                emailBytes,
+                "JacarandaComments",
+                "GuestEmail",
+                PortalId.ToString(),
+                ModuleId.ToString());
+
+            if (protectedBytes == null || protectedBytes.Length == 0)
+            {
+                return false;
+            }
+
+            protectedEmail = Convert.ToBase64String(protectedBytes);
+            return protectedEmail.Length <= 2048;
+        }
+        catch (Exception ex)
+        {
+            Exceptions.LogException(ex);
+            return false;
+        }
+    }
+
+    private string ComputeGuestRateLimitKey()
+    {
+        if (Request == null)
+        {
+            return String.Empty;
+        }
+
+        var remoteAddress = (Request.UserHostAddress ?? String.Empty).Trim();
+        var userAgent = (Request.UserAgent ?? String.Empty).Trim();
+
+        if (userAgent.Length > 256)
+        {
+            userAgent = userAgent.Substring(0, 256);
+        }
+
+        if (String.IsNullOrWhiteSpace(remoteAddress) && String.IsNullOrWhiteSpace(userAgent))
+        {
+            return String.Empty;
+        }
+
+        // Store only a one-way pseudonymous value. The raw network address and
+        // browser signature are never written to the comments table.
+        var source = "JacarandaCommentsGuestRate|" + PortalId + "|" + ModuleId
+            + "|" + remoteAddress + "|" + userAgent;
+
+        try
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(source));
+                var output = new StringBuilder(hash.Length * 2);
+
+                foreach (var value in hash)
+                {
+                    output.Append(value.ToString("x2"));
+                }
+
+                return output.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            Exceptions.LogException(ex);
+            return String.Empty;
+        }
     }
 
     private void EnsureCaptchaChallenge()
@@ -1011,7 +1699,16 @@ WHERE PortalId = @PortalId
         return true;
     }
 
-    private void SendNotificationEmail(int commentId, bool isReply, bool isApproved, string displayName, string commentText)
+    private void SendNotificationEmail(
+        int commentId,
+        bool isReply,
+        bool isApproved,
+        string displayName,
+        string commentText,
+        bool isGuest,
+        string guestEmail,
+        bool isEdit,
+        bool languageFlagged)
     {
         if (!EnableNotifications)
         {
@@ -1037,8 +1734,18 @@ WHERE PortalId = @PortalId
             return;
         }
 
-        var subject = CleanEmailHeader("New " + (isReply ? "reply" : "comment") + " on " + GetPortalName());
-        var body = BuildNotificationBody(commentId, isReply, isApproved, displayName, commentText);
+        var subjectPrefix = isEdit ? "Edited " : (isGuest ? "New guest " : "New ");
+        var subject = CleanEmailHeader(subjectPrefix + (isReply ? "reply" : "comment") + " on " + GetPortalName());
+        var body = BuildNotificationBody(
+            commentId,
+            isReply,
+            isApproved,
+            displayName,
+            commentText,
+            isGuest,
+            guestEmail,
+            isEdit,
+            languageFlagged);
 
         foreach (var recipient in recipients)
         {
@@ -1174,31 +1881,61 @@ WHERE PortalId = @PortalId
         return value;
     }
 
-    private string BuildNotificationBody(int commentId, bool isReply, bool isApproved, string displayName, string commentText)
+    private string BuildNotificationBody(
+        int commentId,
+        bool isReply,
+        bool isApproved,
+        string displayName,
+        string commentText,
+        bool isGuest,
+        string guestEmail,
+        bool isEdit,
+        bool languageFlagged)
     {
         var body = new StringBuilder();
 
-        body.AppendLine("A new " + (isReply ? "reply" : "comment") + " has been submitted.");
+        body.AppendLine((isEdit ? "A " : "A new ")
+            + (isGuest ? "guest " : String.Empty)
+            + (isReply ? "reply" : "comment")
+            + (isEdit ? " has been edited." : " has been submitted."));
         body.AppendLine();
-        body.AppendLine("Portal: " + GetPortalName());
-        body.AppendLine("Page: " + GetPageUrl());
-        body.AppendLine("Module: " + (ModuleConfiguration != null ? ModuleConfiguration.ModuleTitle : "Jacaranda Comments"));
+        body.AppendLine("Portal: " + EncodeForNotification(GetPortalName()));
+        body.AppendLine("Page: " + EncodeForNotification(GetPageUrl()));
+        body.AppendLine("Module: " + EncodeForNotification(ModuleConfiguration != null ? ModuleConfiguration.ModuleTitle : "Jacaranda Comments"));
         body.AppendLine("Comment ID: " + commentId);
-        body.AppendLine("Author: " + displayName);
+        body.AppendLine("Author: " + EncodeForNotification(displayName));
+        body.AppendLine("Author type: " + (isGuest ? "Guest" : "Registered DNN user"));
+
+        if (isGuest && !String.IsNullOrWhiteSpace(guestEmail))
+        {
+            body.AppendLine("Private guest email: " + EncodeForNotification(guestEmail));
+        }
+
         body.AppendLine("Status: " + (isApproved ? "Approved" : "Waiting for approval"));
-        body.AppendLine("Submitted UTC: " + DateTime.UtcNow.ToString("dd MMM yyyy, h:mm tt") + " UTC");
+
+        if (languageFlagged)
+        {
+            body.AppendLine("Private language filter: Triggered — review the submission before approval.");
+        }
+
+        body.AppendLine((isEdit ? "Edited UTC: " : "Submitted UTC: ") + DateTime.UtcNow.ToString("dd MMM yyyy, h:mm tt") + " UTC");
 
         if (IncludeCommentTextInNotifications)
         {
             body.AppendLine();
             body.AppendLine("Comment:");
-            body.AppendLine(commentText);
+            body.AppendLine(EncodeForNotification(commentText));
         }
 
         body.AppendLine();
         body.AppendLine("Sign in to DNN and open the page/module settings to moderate comments.");
 
         return body.ToString();
+    }
+
+    private string EncodeForNotification(string value)
+    {
+        return HttpUtility.HtmlEncode(value ?? String.Empty);
     }
 
     private string GetPortalName()
@@ -1239,9 +1976,18 @@ WHERE PortalId = @PortalId
 
     private string BuildModerationNote()
     {
-        var moderationText = RequireApprovalForNonEditors
-            ? "Comments and replies from non-editors are held for approval."
-            : "Comments and replies from signed-in users are posted immediately.";
+        string moderationText;
+
+        if (IsGuestPoster)
+        {
+            moderationText = "Guest comments and replies are always held for approval. Your email address is private and is not displayed publicly. Guest submissions cannot be edited after posting; register or sign in first to receive a 15-minute edit window.";
+        }
+        else
+        {
+            moderationText = RequireApprovalForNonEditors
+                ? "Comments and replies from non-editors are held for approval. Registered authors can edit their own submissions for 15 minutes after posting."
+                : "Comments and replies from signed-in users are posted immediately. Registered authors can edit their own submissions for 15 minutes after posting.";
+        }
 
         if (EnableRateLimiting && !CanModerateComments())
         {
@@ -1403,6 +2149,46 @@ WHERE CommentId = @CommentId
         return localDate.ToString("dd MMM yyyy, h:mm tt");
     }
 
+    protected bool ShowLanguageFilterFlag(object value)
+    {
+        if (!CanModerateComments() || value == null || value == DBNull.Value)
+        {
+            return false;
+        }
+
+        bool flagged;
+        return Boolean.TryParse(Convert.ToString(value), out flagged) && flagged;
+    }
+
+    protected string FormatEditedDate(object value)
+    {
+        if (value == null || value == DBNull.Value)
+        {
+            return String.Empty;
+        }
+
+        var editedUtc = DateTime.SpecifyKind(Convert.ToDateTime(value), DateTimeKind.Utc);
+        return "Edited " + editedUtc.ToLocalTime().ToString("dd MMM yyyy, h:mm tt");
+    }
+
+    protected bool CanEditComment(object commentUserId, object createdOnDate)
+    {
+        if (!IsRegisteredCommentUser || commentUserId == null || commentUserId == DBNull.Value
+            || createdOnDate == null || createdOnDate == DBNull.Value)
+        {
+            return false;
+        }
+
+        int ownerUserId;
+        if (!Int32.TryParse(Convert.ToString(commentUserId), out ownerUserId) || ownerUserId != UserId)
+        {
+            return false;
+        }
+
+        var createdUtc = DateTime.SpecifyKind(Convert.ToDateTime(createdOnDate), DateTimeKind.Utc);
+        return DateTime.UtcNow <= createdUtc.AddMinutes(RegisteredEditWindowMinutes);
+    }
+
     private static string Truncate(string value, int maxLength)
     {
         if (String.IsNullOrEmpty(value)) return String.Empty;
@@ -1535,7 +2321,7 @@ WHERE CommentId = @CommentId
             && (String.IsNullOrWhiteSpace(rawQueryTargetCommentId)
                 || (Int32.TryParse(rawQueryTargetCommentId, out queryTargetCommentId)
                     && queryTargetCommentId == queuedTargetCommentId))
-            && IsApprovedCommentVisibleInCurrentScope(queuedTargetCommentId))
+            && IsCommentVisibleInCurrentScope(queuedTargetCommentId))
         {
             targetCommentId = queuedTargetCommentId;
         }
@@ -1591,7 +2377,7 @@ WHERE CommentId = @CommentId
         int targetCommentId;
         if (Int32.TryParse(Convert.ToString(rawTargetCommentId), out targetCommentId)
             && targetCommentId > 0
-            && IsApprovedCommentVisibleInCurrentScope(targetCommentId))
+            && IsCommentVisibleInCurrentScope(targetCommentId))
         {
             RegisterCommentTargetFocusScript(targetCommentId);
         }
@@ -1621,6 +2407,14 @@ WHERE CommentId = @CommentId
                 return "Your reply has been posted. You can refresh the page safely.";
             case "reply-pending":
                 return "Your reply was received and is waiting for approval. You can refresh the page safely.";
+            case "comment-edited":
+                return "Your comment changes have been saved. You can refresh the page safely.";
+            case "comment-edit-pending":
+                return "Your comment changes were saved and are waiting for approval. You can refresh the page safely.";
+            case "reply-edited":
+                return "Your reply changes have been saved. You can refresh the page safely.";
+            case "reply-edit-pending":
+                return "Your reply changes were saved and are waiting for approval. You can refresh the page safely.";
             case "received":
                 return "Your comment has been received. You can refresh the page safely.";
             case "comment-approved":
@@ -1632,7 +2426,7 @@ WHERE CommentId = @CommentId
         }
     }
 
-    private bool IsApprovedCommentVisibleInCurrentScope(int commentId)
+    private bool IsCommentVisibleInCurrentScope(int commentId)
     {
         if (commentId <= 0)
         {
@@ -1649,13 +2443,14 @@ WHERE CommentId = @CommentId
   AND PortalId = @PortalId
   AND TabId = @TabId
   AND ModuleId = @ModuleId
-  AND IsApproved = 1
-  AND IsDeleted = 0;";
+  AND IsDeleted = 0
+  AND (IsApproved = 1 OR (@CurrentUserId > -1 AND UserId = @CurrentUserId));";
 
             command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
             command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
             command.Parameters.Add("@TabId", SqlDbType.Int).Value = TabId;
             command.Parameters.Add("@ModuleId", SqlDbType.Int).Value = ModuleId;
+            command.Parameters.Add("@CurrentUserId", SqlDbType.Int).Value = UserId;
 
             connection.Open();
             return Convert.ToInt32(command.ExecuteScalar()) > 0;
@@ -2198,7 +2993,14 @@ WHERE CommentId = @CommentId
                 <header class="jc-comment-meta">
                     <strong class="jc-comment-author"><%# Encode(Eval("DisplayName")) %></strong>
                     <span class="jc-comment-date"><%# FormatDate(Eval("CreatedOnDate")) %></span>
+                    <span class="jc-comment-edited"><%# FormatEditedDate(Eval("EditedOnDate")) %></span>
                     <span class="jc-comment-status"><%# CommentStatusText(Eval("IsApproved")) %></span>
+                    <asp:Label ID="lblLanguageFilterFlag"
+                               runat="server"
+                               CssClass="jc-language-flag"
+                               Text="Language filter"
+                               ToolTip="This submission matched the private module language filter and requires moderator review."
+                               Visible='<%# ShowLanguageFilterFlag(Eval("IsLanguageFlagged")) %>' />
                 </header>
 
                 <div class="jc-comment-body">
@@ -2213,6 +3015,17 @@ WHERE CommentId = @CommentId
                                     CommandArgument='<%# Eval("CommentId") %>'
                                     Visible='<%# CanPostComments %>'>
                         Reply
+                    </asp:LinkButton>
+
+                    <asp:LinkButton ID="btnEdit"
+                                    runat="server"
+                                    CssClass="jc-action jc-edit"
+                                    CommandName="EditComment"
+                                    CommandArgument='<%# Eval("CommentId") %>'
+                                    CausesValidation="false"
+                                    ToolTip="Edit your own comment within 15 minutes of posting"
+                                    Visible='<%# CanEditComment(Eval("UserId"), Eval("CreatedOnDate")) %>'>
+                        Edit
                     </asp:LinkButton>
 
                     <asp:Panel ID="pnlModeration" runat="server" CssClass="jc-moderation" Visible='<%# CanModerateComments() %>'>
@@ -2240,7 +3053,7 @@ WHERE CommentId = @CommentId
     </asp:Repeater>
 
     <asp:Panel ID="pnlLoginRequired" runat="server" CssClass="jc-login-required">
-        Please sign in to leave a comment or reply.
+        Please sign in to leave a comment or reply. Guest commenting is currently switched off for this module.
     </asp:Panel>
 
     <asp:Panel ID="pnlCommentForm" runat="server" CssClass="jc-form">
@@ -2248,6 +3061,7 @@ WHERE CommentId = @CommentId
 
         <asp:HiddenField ID="hdnSecurityToken" runat="server" />
         <asp:HiddenField ID="hdnParentCommentId" runat="server" />
+        <asp:HiddenField ID="hdnEditCommentId" runat="server" />
 
         <asp:Panel ID="pnlReplyContext" runat="server" CssClass="jc-reply-context" Visible="false">
             <asp:Literal ID="litReplyContext" runat="server" />
@@ -2260,10 +3074,35 @@ WHERE CommentId = @CommentId
             </asp:LinkButton>
         </asp:Panel>
 
+        <asp:Panel ID="pnlEditContext" runat="server" CssClass="jc-edit-context" Visible="false">
+            <asp:Literal ID="litEditContext" runat="server" />
+            <asp:LinkButton ID="btnCancelEdit"
+                            runat="server"
+                            CssClass="jc-cancel-edit"
+                            OnClick="btnCancelEdit_Click"
+                            CausesValidation="false">
+                Cancel editing
+            </asp:LinkButton>
+        </asp:Panel>
+
         <div class="jc-field">
             <asp:Label ID="lblDisplayName" runat="server" AssociatedControlID="txtDisplayName" Text="Name shown" />
             <asp:TextBox ID="txtDisplayName" runat="server" MaxLength="100" CssClass="jc-input" />
         </div>
+
+        <asp:Panel ID="pnlGuestEmail" runat="server" CssClass="jc-field jc-guest-email" Visible="false">
+            <asp:Label ID="lblGuestEmail" runat="server" AssociatedControlID="txtGuestEmail" Text="Email address (private)" />
+            <asp:TextBox ID="txtGuestEmail"
+                         runat="server"
+                         MaxLength="254"
+                         TextMode="Email"
+                         CssClass="jc-input" />
+            <p class="jc-field-help">Your email is encrypted before storage and is never displayed with your comment.</p>
+        </asp:Panel>
+
+        <asp:Panel ID="pnlGuestNotice" runat="server" CssClass="jc-guest-notice" Visible="false">
+            <strong>Guest posting:</strong> every submission is reviewed before publication and cannot be edited after it is sent. Register or sign in before posting to receive a 15-minute editing window.
+        </asp:Panel>
 
         <div class="jc-field jc-hp" aria-hidden="true">
             <asp:Label ID="lblWebsite" runat="server" AssociatedControlID="txtWebsite" Text="Website" />

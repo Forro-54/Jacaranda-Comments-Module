@@ -1,0 +1,19 @@
+﻿-- Jacaranda Comments 01.01.02
+-- Adds a moderator-only audit flag for submissions matched by the private
+-- per-module language filter. Existing comments are marked as not flagged.
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'IsLanguageFlagged') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [IsLanguageFlagged] BIT NOT NULL
+            CONSTRAINT [DF_{objectQualifier}JacarandaComments_IsLanguageFlagged] DEFAULT ((0));
+    END
+END
+GO

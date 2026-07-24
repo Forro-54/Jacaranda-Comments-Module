@@ -1,9 +1,13 @@
 <%@ Control Language="C#" AutoEventWireup="true" Inherits="DotNetNuke.Entities.Modules.ModuleSettingsBase" %>
 <%@ Import Namespace="System" %>
+<%@ Import Namespace="System.Collections.Generic" %>
 <%@ Import Namespace="DotNetNuke.Entities.Modules" %>
 
 <script runat="server">
     private const string SettingPrefix = "JacarandaComments_";
+    private const int MaximumBlockedTermsSettingLength = 8000;
+    private const int MaximumBlockedTermCount = 250;
+    private const int MaximumBlockedTermLength = 100;
 
     public override void LoadSettings()
     {
@@ -14,7 +18,11 @@
             return;
         }
 
+        chkAllowGuestComments.Checked = GetSettingBool("AllowGuestComments", false);
         chkRequireApproval.Checked = GetSettingBool("RequireApprovalForNonEditors", true);
+
+        chkEnableLanguageFilter.Checked = GetSettingBool("EnableLanguageFilter", false);
+        txtBlockedLanguageTerms.Text = GetSettingString("BlockedLanguageTerms", String.Empty);
 
         txtMaximumCommentLength.Text = GetSettingInt("MaximumCommentLength", 4000, 250, 10000).ToString();
 
@@ -34,7 +42,11 @@
     {
         var controller = new ModuleController();
 
+        controller.UpdateModuleSetting(ModuleId, Key("AllowGuestComments"), chkAllowGuestComments.Checked.ToString());
         controller.UpdateModuleSetting(ModuleId, Key("RequireApprovalForNonEditors"), chkRequireApproval.Checked.ToString());
+
+        controller.UpdateModuleSetting(ModuleId, Key("EnableLanguageFilter"), chkEnableLanguageFilter.Checked.ToString());
+        controller.UpdateModuleSetting(ModuleId, Key("BlockedLanguageTerms"), NormalizeBlockedTermsSetting(txtBlockedLanguageTerms.Text));
 
         controller.UpdateModuleSetting(ModuleId, Key("MaximumCommentLength"), ClampInt(txtMaximumCommentLength.Text, 4000, 250, 10000).ToString());
 
@@ -103,10 +115,90 @@
 
         return value;
     }
+
+    private string NormalizeBlockedTermsSetting(string raw)
+    {
+        raw = raw ?? String.Empty;
+
+        if (raw.Length > MaximumBlockedTermsSettingLength)
+        {
+            raw = raw.Substring(0, MaximumBlockedTermsSettingLength);
+        }
+
+        var terms = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lines = raw.Replace("\r\n", "\n").Replace('\r', '\n')
+            .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            var term = RemoveControlCharacters((line ?? String.Empty).Trim());
+
+            if (String.IsNullOrWhiteSpace(term))
+            {
+                continue;
+            }
+
+            if (term.Length > MaximumBlockedTermLength)
+            {
+                term = term.Substring(0, MaximumBlockedTermLength).Trim();
+            }
+
+            if (term.Length == 0 || !seen.Add(term))
+            {
+                continue;
+            }
+
+            terms.Add(term);
+
+            if (terms.Count >= MaximumBlockedTermCount)
+            {
+                break;
+            }
+        }
+
+        return String.Join(Environment.NewLine, terms.ToArray());
+    }
+
+    private string RemoveControlCharacters(string value)
+    {
+        if (String.IsNullOrEmpty(value))
+        {
+            return String.Empty;
+        }
+
+        var characters = new List<char>(value.Length);
+
+        foreach (var character in value)
+        {
+            if (!Char.IsControl(character))
+            {
+                characters.Add(character);
+            }
+        }
+
+        return new String(characters.ToArray());
+    }
 </script>
 
 <div class="jacaranda-comments jc-settings">
     <h2>Jacaranda Comments Settings</h2>
+
+    <fieldset class="jc-settings-section">
+        <legend>Guest commenting</legend>
+
+        <div class="jc-setting-row">
+            <asp:CheckBox ID="chkAllowGuestComments"
+                          runat="server"
+                          Text="Allow signed-out visitors to submit guest comments and replies" />
+            <p class="jc-setting-help">
+                Default: off. Guest name and email are required, the email is never shown publicly, and every guest submission is held for approval. Guests cannot edit after submitting; they must register or sign in before posting to receive the 15-minute edit window.
+            </p>
+            <p class="jc-setting-warning">
+                For public guest commenting, enable CAPTCHA and keep rate limiting enabled. You can turn guest commenting off immediately without affecting existing comments.
+            </p>
+        </div>
+    </fieldset>
 
     <fieldset class="jc-settings-section">
         <legend>Moderation</legend>
@@ -117,6 +209,38 @@
                           Text="Hold comments and replies from non-editors for approval" />
             <p class="jc-setting-help">
                 Editors, administrators, and superusers can still post immediately and approve/delete comments from the module view.
+            </p>
+        </div>
+    </fieldset>
+
+    <fieldset class="jc-settings-section">
+        <legend>Language filter</legend>
+
+        <div class="jc-setting-row">
+            <asp:CheckBox ID="chkEnableLanguageFilter"
+                          runat="server"
+                          Text="Enable the private language filter for comments and replies" />
+            <p class="jc-setting-help">
+                Default: off. A matching submission is kept unchanged but forced into moderation. The visitor is only told that the submission is waiting for approval.
+            </p>
+        </div>
+
+        <div class="jc-field">
+            <asp:Label ID="lblBlockedLanguageTerms"
+                       runat="server"
+                       AssociatedControlID="txtBlockedLanguageTerms"
+                       Text="Terms or phrases to hold for review" />
+            <asp:TextBox ID="txtBlockedLanguageTerms"
+                         runat="server"
+                         CssClass="jc-textarea jc-language-terms"
+                         TextMode="MultiLine"
+                         Rows="7"
+                         MaxLength="8000" />
+            <p class="jc-setting-help">
+                Enter one term or phrase per line. Matching is not case-sensitive and treats punctuation as a separator. The list is available only on this authorised settings screen and is not sent to the public comment form. Up to 250 entries are retained, with a maximum of 100 characters per entry.
+            </p>
+            <p class="jc-setting-warning">
+                This is a moderation aid, not a complete content-safety system. Review flagged submissions before approval because simple language filters can produce false matches or be deliberately evaded.
             </p>
         </div>
     </fieldset>
@@ -211,7 +335,7 @@
                           runat="server"
                           Text="Enable the built-in anti-spam math CAPTCHA for non-editor posters" />
             <p class="jc-setting-help">
-                This avoids third-party scripts and keys. It is intentionally lightweight because posting already requires a DNN login.
+                This avoids third-party scripts and keys. It applies to registered non-editors and to guests when guest commenting is enabled.
             </p>
         </div>
     </fieldset>
@@ -248,6 +372,6 @@
     </fieldset>
 
     <p class="jc-note">
-        Settings are stored as DNN module settings, so each instance of the comments module can have its own comment length, moderation, and anti-spam behaviour.
+        Settings are stored as DNN module settings, so each instance can independently allow or block guest posting and use its own comment length, moderation, notification, and anti-spam behaviour.
     </p>
 </div>

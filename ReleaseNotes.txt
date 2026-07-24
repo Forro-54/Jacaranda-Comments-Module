@@ -1,4 +1,31 @@
-﻿Jacaranda Comments 01.00.20
+﻿Jacaranda Comments 01.01.02
+- Adds an optional private language filter configured separately for each module instance.
+- Keeps the filter switched off by default after new installations and upgrades.
+- Lets authorised module editors enter one term or phrase per line on the settings screen; the list is not rendered or sent to public visitors.
+- Performs case-insensitive whole-word and phrase matching after safe Unicode normalisation and punctuation separation.
+- Never deletes, rewrites, or publicly identifies the matched text; a match quietly forces the unchanged submission into moderation.
+- Applies the same rule to guest comments, registered comments, replies, and registered-author edits.
+- Prevents editors and other normally auto-approved posters from bypassing a configured match; a moderator must review and approve it explicitly.
+- Adds a moderator-only “Language filter” marker and a private notification-email note without revealing the configured term to the author.
+- Limits the stored setting to 250 unique entries and 100 characters per entry, without compiling administrator input as executable regular expressions or SQL.
+- Adds the IsLanguageFlagged database field for moderation/audit visibility; existing comments default to not flagged.
+
+Jacaranda Comments 01.01.01
+- Adds a per-module “Allow guest comments” setting, switched off by default.
+- Allows signed-out visitors to submit comments and replies using a required display name and private email address.
+- Holds every guest submission for moderator approval regardless of the registered-user moderation setting.
+- Encrypts guest email addresses with ASP.NET MachineKey protection before database storage and never renders them publicly.
+- Includes guest email only in the existing private moderator notification email.
+- Uses a one-way SHA-256 guest rate-limit key based on the current network address and browser signature; the raw address is not stored.
+- Keeps CAPTCHA, honeypot, anti-CSRF token validation, parameterised SQL, length validation, output encoding, and module/page scope checks in the guest workflow.
+- Adds a server-enforced 15-minute edit window for registered authors to edit their own comments and replies.
+- Does not allow guest editing; the guest form explains that registration or sign-in is required for editing.
+- Returns non-editor edits to pending approval when moderation is required.
+- Shows registered users their own pending comments so they can edit them during the allowed window.
+- Records dedicated edit audit fields without confusing edits with moderator approval or deletion actions.
+- Adds database columns GuestEmailEncrypted, GuestRateLimitKey, EditedOnDate, and EditedByUserId plus a guest rate-limit index.
+
+Jacaranda Comments 01.00.20
 - Positions success and posting-error notifications within the visible area of the Jacaranda Comments module that generated them.
 - Keeps notifications inside the module column so they do not cover neighbouring article or content columns on multi-pane DNN pages.
 - Recalculates notification position while scrolling or resizing, including long side-by-side article/comment layouts.

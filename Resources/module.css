@@ -255,9 +255,14 @@
     font-size: 1.05rem;
 }
 
-.jacaranda-comments .jc-comment-date {
+.jacaranda-comments .jc-comment-date,
+.jacaranda-comments .jc-comment-edited {
     color: #666;
     font-size: 0.9rem;
+}
+
+.jacaranda-comments .jc-comment-edited:empty {
+    display: none;
 }
 
 .jacaranda-comments .jc-comment-status {
@@ -313,13 +318,18 @@
     color: #006800;
 }
 
+.jacaranda-comments .jc-edit {
+    color: #5a4500;
+}
+
 .jacaranda-comments .jc-form {
     border-top: 2px solid rgba(0, 128, 0, 0.2);
     margin-top: 1.25rem;
     padding-top: 1rem;
 }
 
-.jacaranda-comments .jc-reply-context {
+.jacaranda-comments .jc-reply-context,
+.jacaranda-comments .jc-edit-context {
     align-items: center;
     background: #eef8ee;
     border: 1px solid #81c348;
@@ -332,7 +342,13 @@
     padding: 0.65rem 0.75rem;
 }
 
-.jacaranda-comments .jc-cancel-reply {
+.jacaranda-comments .jc-edit-context {
+    background: #fff9e8;
+    border-color: #c49a20;
+}
+
+.jacaranda-comments .jc-cancel-reply,
+.jacaranda-comments .jc-cancel-edit {
     color: #803100;
     font-size: 0.95rem;
     font-weight: bold;
@@ -382,6 +398,21 @@
 .jacaranda-comments .jc-submit:hover,
 .jacaranda-comments .jc-submit:focus {
     background: #004c00;
+}
+
+.jacaranda-comments .jc-field-help {
+    color: #555;
+    font-size: 0.9rem;
+    margin: 0.3rem 0 0;
+    text-indent: 0;
+}
+
+.jacaranda-comments .jc-guest-notice {
+    background: #f7f7ff;
+    border: 2px solid #5757a8;
+    border-radius: 4px;
+    margin: 0.5rem 0 0.85rem;
+    padding: 0.7rem 0.8rem;
 }
 
 .jacaranda-comments .jc-note {
@@ -502,11 +533,19 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.jacaranda-comments .jc-setting-help {
+.jacaranda-comments .jc-setting-help,
+.jacaranda-comments .jc-setting-warning {
     color: #555;
     font-size: 0.92rem;
     margin: 0.3rem 0 0;
     text-indent: 0;
+}
+
+.jacaranda-comments .jc-setting-warning {
+    background: #fff8e6;
+    border-left: 4px solid #9a6b00;
+    color: #4d3600;
+    padding: 0.55rem 0.7rem;
 }
 
 .jacaranda-comments .jc-setting-number .jc-input {
@@ -524,4 +563,21 @@
     background: #f5f5f5;
     color: #555;
     cursor: not-allowed;
+}
+
+/* 01.01.02 private language-filter indicators */
+.jacaranda-comments .jc-language-flag {
+    background: #fff4d6;
+    border: 2px solid #8a5a00;
+    border-radius: 999px;
+    color: #4d3200;
+    display: inline-block;
+    font-size: 0.82rem;
+    font-weight: bold;
+    line-height: 1.2;
+    padding: 0.12rem 0.45rem;
+}
+
+.jacaranda-comments .jc-language-terms {
+    min-height: 9rem;
 }

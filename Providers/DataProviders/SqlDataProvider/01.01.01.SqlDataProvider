@@ -1,0 +1,52 @@
+﻿-- Jacaranda Comments 01.01.01
+-- Adds private encrypted guest email storage, a one-way guest rate-limit key,
+-- and dedicated registered-author edit audit fields.
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'GuestEmailEncrypted') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [GuestEmailEncrypted] NVARCHAR(2048) NULL;
+    END
+
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'GuestRateLimitKey') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [GuestRateLimitKey] NVARCHAR(64) NULL;
+    END
+
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'EditedOnDate') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [EditedOnDate] DATETIME NULL;
+    END
+
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'EditedByUserId') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [EditedByUserId] INT NULL;
+    END
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM sys.indexes
+        WHERE name = N'IX_{objectQualifier}JacarandaComments_GuestRate'
+          AND object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+    )
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_{objectQualifier}JacarandaComments_GuestRate]
+        ON {databaseOwner}[{objectQualifier}JacarandaComments] (
+            [PortalId],
+            [GuestRateLimitKey],
+            [CreatedOnDate]
+        )
+        INCLUDE ([IsDeleted]);
+    END
+END
+GO
