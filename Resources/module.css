@@ -494,7 +494,24 @@
 }
 
 .jacaranda-comments .jc-captcha-input {
+    border: 3px solid #1b1b1b;
+    box-shadow: 0 0 0 1px #fff, 0 2px 5px rgba(0, 0, 0, 0.22);
+    font-size: 1.125rem;
+    font-weight: bold;
+    min-height: 2.75rem;
     max-width: 8rem;
+    padding: 0.5rem 0.65rem;
+}
+
+.jacaranda-comments .jc-captcha-input:hover {
+    border-color: #000;
+}
+
+.jacaranda-comments .jc-captcha-input:focus {
+    border-color: #005fcc;
+    box-shadow: 0 0 0 4px rgba(0, 95, 204, 0.28);
+    outline: 3px solid #005fcc;
+    outline-offset: 2px;
 }
 
 .jacaranda-comments.jc-settings {

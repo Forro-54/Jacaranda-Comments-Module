@@ -1,4 +1,16 @@
-﻿Jacaranda Comments 01.01.02
+﻿Jacaranda Comments 01.01.03
+- Uses the current DNN page title in moderator notification email subjects.
+- Uses the exact pending subject format “Comment awaiting approval — [Page title]” for comments and replies requiring moderation.
+- Uses “New comment — [Page title]” for immediately approved new submissions and “Comment edited — [Page title]” for approved edits.
+- Adds separate Page title and Page link lines to notification email bodies while retaining the portal, module, comment ID, author, status, language-filter flag, and submitted text details.
+- Sanitises and length-limits the final email subject through the existing header-cleaning path.
+- Improves CAPTCHA answer-field visibility with a three-pixel high-contrast border, larger bold text, increased input height, and a strong keyboard-focus outline.
+- Replaces the previous starter notice with the complete MIT License so DNN displays the licence terms during installation.
+- Attributes the MIT licence to Trevor Forrester and Forrest It Services.
+- Keeps posting, replies, guest moderation, registered-author editing, language filtering, permissions, SQL parameterisation, output encoding, and notification delivery behaviour unchanged.
+- No database schema changes.
+
+Jacaranda Comments 01.01.02
 - Adds an optional private language filter configured separately for each module instance.
 - Keeps the filter switched off by default after new installations and upgrades.
 - Lets authorised module editors enter one term or phrase per line on the settings screen; the list is not rendered or sent to public visitors.

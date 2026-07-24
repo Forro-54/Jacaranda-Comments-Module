@@ -1,9 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <dotnetnuke type="Package" version="5.0">
   <packages>
-    <package name="Jacaranda_Comments" type="Module" version="01.01.02">
+    <package name="Jacaranda_Comments" type="Module" version="01.01.03">
       <friendlyName>Jacaranda Comments</friendlyName>
-      <description>Page-level comments and replies module for DNN 10 with opt-in moderated guest posting, registered-author editing, a private per-module language filter, configurable comment length, module-aware accessible notifications, rate limiting, email notifications, and optional CAPTCHA.</description>
+      <description>Page-level comments and replies module for DNN 10 with opt-in moderated guest posting, registered-author editing, a private per-module language filter, configurable comment length, page-aware moderator email subjects, module-aware accessible notifications, a prominent accessible CAPTCHA answer field, rate limiting, email notifications, and optional CAPTCHA.</description>
       <owner>
         <name>Trevor Forrester</name>
         <organization>Forrest It Services</organization>
@@ -129,6 +129,11 @@
               <path>Providers\DataProviders\SqlDataProvider</path>
               <name>01.01.02.SqlDataProvider</name>
               <version>01.01.02</version>
+            </script>
+            <script type="Install">
+              <path>Providers\DataProviders\SqlDataProvider</path>
+              <name>01.01.03.SqlDataProvider</name>
+              <version>01.01.03</version>
             </script>
             <script type="UnInstall">
               <path>Providers\DataProviders\SqlDataProvider</path>

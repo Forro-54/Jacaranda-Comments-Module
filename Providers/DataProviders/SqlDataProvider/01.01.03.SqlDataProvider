@@ -1,0 +1,3 @@
+﻿-- Jacaranda Comments 01.01.03
+-- No database schema changes are required for this maintenance release.
+-- Moderator notification subjects and bodies now identify the current DNN page title and link.
