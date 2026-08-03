@@ -1,4 +1,18 @@
-﻿Jacaranda Comments 01.01.03
+Jacaranda Comments Advanced 01.02.00
+- Starts the Advanced release line from the stable 01.01.03 code base; the stable Simple edition remains on the main branch at 01.01.03.
+- Keeps the existing DNN package identity and installation folder, so Advanced is an upgrade path rather than a second side-by-side module.
+- Adds one portal-scoped Site-wide Jacaranda Comments Settings panel, reachable from each module instance by DNN superusers and members of the portal's built-in Administrators role.
+- Creates no new DNN security roles and repeats the administrator/superuser permission check on every central-panel request and save.
+- Adds portal-wide emergency switches for all new posting and for guest posting; existing comments remain visible and moderation remains available when posting is disabled.
+- Adds portal defaults for guest posting, moderation, language filtering, comment length, rate limiting, CAPTCHA, and notification behaviour.
+- Adds a per-module “Use site-wide defaults” option that is switched off by default, preserving every existing module's local settings after upgrade.
+- Keeps local values stored while inheritance is enabled so switching back to local settings restores the previous configuration.
+- Scopes all central reads and writes by server-derived PortalId and uses parameterised SQL.
+- Adds anti-CSRF validation, server-side value limits, administrator confirmation for portal-wide saves, and audit fields recording the UTC change time and DNN user ID.
+- Shows administrators whether a module is inherited or local and displays the current portal emergency-control state.
+- Adds the JacarandaCommentsPortalSettings database table; existing comments and module settings are not modified.
+
+Jacaranda Comments 01.01.03
 - Uses the current DNN page title in moderator notification email subjects.
 - Uses the exact pending subject format “Comment awaiting approval — [Page title]” for comments and replies requiring moderation.
 - Uses “New comment — [Page title]” for immediately approved new submissions and “Comment edited — [Page title]” for approved edits.

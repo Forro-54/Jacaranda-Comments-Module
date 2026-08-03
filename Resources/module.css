@@ -1,4 +1,4 @@
-﻿/* Jacaranda Comments module
+/* Jacaranda Comments module
    Scoped so it does not interfere with DNN edit-mode overlays or the Jacaranda navbar. */
 
 .jacaranda-comments {
@@ -597,4 +597,73 @@
 
 .jacaranda-comments .jc-language-terms {
     min-height: 9rem;
+}
+
+/* 01.02.00 Advanced portal-wide settings and administrator navigation */
+.jacaranda-comments .jc-header-title {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.jacaranda-comments .jc-admin-settings,
+.jacaranda-comments .jc-secondary-button {
+    background: #f5f5f5;
+    border: 2px solid #333;
+    border-radius: 4px;
+    color: #111;
+    display: inline-block;
+    font-weight: 700;
+    line-height: 1.25;
+    padding: 0.48rem 0.7rem;
+    text-decoration: none;
+}
+
+.jacaranda-comments .jc-admin-settings:hover,
+.jacaranda-comments .jc-admin-settings:focus,
+.jacaranda-comments .jc-secondary-button:hover,
+.jacaranda-comments .jc-secondary-button:focus {
+    background: #fff;
+    border-color: #005fcc;
+    color: #003f88;
+    outline: 3px solid rgba(0, 95, 204, 0.25);
+    outline-offset: 2px;
+}
+
+.jacaranda-comments .jc-inheritance-status,
+.jacaranda-comments .jc-portal-emergency-status,
+.jacaranda-comments .jc-audit-note {
+    background: #f5f8fb;
+    border-left: 4px solid #315f86;
+    color: #1c3448;
+    margin: 0.65rem 0;
+    padding: 0.65rem 0.8rem;
+    text-indent: 0;
+}
+
+.jacaranda-comments .jc-portal-emergency-status {
+    border-left-color: #8a5a00;
+}
+
+.jacaranda-comments .jc-central-settings-link {
+    margin-top: 0.85rem;
+}
+
+.jacaranda-comments .jc-emergency-settings {
+    border: 2px solid #8a5a00;
+}
+
+.jacaranda-comments .jc-settings-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+@media (max-width: 767.98px) {
+    .jacaranda-comments .jc-admin-settings {
+        width: 100%;
+    }
 }

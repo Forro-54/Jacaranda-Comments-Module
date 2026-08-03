@@ -1,4 +1,4 @@
-﻿<%@ Control Language="C#" AutoEventWireup="true" Inherits="DotNetNuke.Entities.Modules.PortalModuleBase" %>
+<%@ Control Language="C#" AutoEventWireup="true" Inherits="DotNetNuke.Entities.Modules.PortalModuleBase" %>
 <%@ Import Namespace="System" %>
 <%@ Import Namespace="System.Collections.Generic" %>
 <%@ Import Namespace="System.Data" %>
@@ -37,6 +37,9 @@
     private const string PostRedirectModuleQueryKey = "jcmid";
     private const string PostRedirectCommentQueryKey = "jccid";
 
+    private PortalCommentSettings _portalCommentSettings;
+    private bool _portalCommentSettingsLoaded;
+
     private string PostRedirectMessageAnchorId
     {
         get { return PostRedirectMessageAnchorPrefix + ModuleId; }
@@ -51,6 +54,18 @@
             var qualifier = CleanSqlIdentifierPart(provider.ObjectQualifier, String.Empty);
 
             return "[" + owner + "].[" + qualifier + "JacarandaComments]";
+        }
+    }
+
+    private string PortalSettingsTable
+    {
+        get
+        {
+            var provider = DataProvider.Instance();
+            var owner = CleanSqlIdentifierPart(provider.DatabaseOwner, "dbo");
+            var qualifier = CleanSqlIdentifierPart(provider.ObjectQualifier, String.Empty);
+
+            return "[" + owner + "].[" + qualifier + "JacarandaCommentsPortalSettings]";
         }
     }
 
@@ -96,14 +111,42 @@
         get { return UserInfo != null && UserId > -1 && !UserInfo.IsDeleted; }
     }
 
+    private bool UsePortalSettings
+    {
+        get { return GetModuleSettingBool("UsePortalSettings", false); }
+    }
+
+    private bool PortalPostingEnabled
+    {
+        get
+        {
+            var settings = GetPortalCommentSettings();
+            return !settings.Available || settings.PostingEnabled;
+        }
+    }
+
+    private bool PortalGuestPostingEnabled
+    {
+        get
+        {
+            var settings = GetPortalCommentSettings();
+            return !settings.Available || settings.GuestPostingEnabled;
+        }
+    }
+
     private bool AllowGuestComments
     {
-        get { return GetModuleSettingBool("AllowGuestComments", false); }
+        get
+        {
+            var localValue = GetModuleSettingBool("AllowGuestComments", false);
+            var effectiveValue = GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultAllowGuestComments; });
+            return PortalGuestPostingEnabled && effectiveValue;
+        }
     }
 
     protected bool CanPostComments
     {
-        get { return IsRegisteredCommentUser || AllowGuestComments; }
+        get { return PortalPostingEnabled && (IsRegisteredCommentUser || AllowGuestComments); }
     }
 
     private bool IsGuestPoster
@@ -116,27 +159,66 @@
         return UserInfo != null && (UserInfo.IsSuperUser || IsEditable);
     }
 
+    private bool CanManagePortalCommentSettings()
+    {
+        if (UserInfo == null)
+        {
+            return false;
+        }
+
+        if (UserInfo.IsSuperUser)
+        {
+            return true;
+        }
+
+        var administratorRoleName = PortalSettings == null
+            ? String.Empty
+            : (PortalSettings.AdministratorRoleName ?? String.Empty).Trim();
+
+        return !String.IsNullOrWhiteSpace(administratorRoleName)
+            && UserInfo.IsInRole(administratorRoleName);
+    }
+
     private bool RequireApprovalForNonEditors
     {
-        get { return GetModuleSettingBool("RequireApprovalForNonEditors", true); }
+        get
+        {
+            var localValue = GetModuleSettingBool("RequireApprovalForNonEditors", true);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultRequireApprovalForNonEditors; });
+        }
     }
 
     private bool EnableLanguageFilter
     {
-        get { return GetModuleSettingBool("EnableLanguageFilter", false); }
+        get
+        {
+            var localValue = GetModuleSettingBool("EnableLanguageFilter", false);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultEnableLanguageFilter; });
+        }
     }
 
     private string BlockedLanguageTerms
     {
-        get { return GetModuleSettingString("BlockedLanguageTerms", String.Empty); }
+        get
+        {
+            var localValue = GetModuleSettingString("BlockedLanguageTerms", String.Empty);
+            return GetEffectivePortalString(localValue, delegate(PortalCommentSettings value) { return value.DefaultBlockedLanguageTerms; });
+        }
     }
 
     private int MaximumCommentLength
     {
         get
         {
-            return GetModuleSettingInt(
+            var localValue = GetModuleSettingInt(
                 "MaximumCommentLength",
+                DefaultMaximumCommentLength,
+                MinimumMaximumCommentLength,
+                MaximumMaximumCommentLength);
+
+            return GetEffectivePortalInt(
+                localValue,
+                delegate(PortalCommentSettings value) { return value.DefaultMaximumCommentLength; },
                 DefaultMaximumCommentLength,
                 MinimumMaximumCommentLength,
                 MaximumMaximumCommentLength);
@@ -145,42 +227,74 @@
 
     private bool EnableRateLimiting
     {
-        get { return GetModuleSettingBool("EnableRateLimiting", true); }
+        get
+        {
+            var localValue = GetModuleSettingBool("EnableRateLimiting", true);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultEnableRateLimiting; });
+        }
     }
 
     private int RateLimitSeconds
     {
-        get { return GetModuleSettingInt("RateLimitSeconds", 60, 0, 3600); }
+        get
+        {
+            var localValue = GetModuleSettingInt("RateLimitSeconds", 60, 0, 3600);
+            return GetEffectivePortalInt(localValue, delegate(PortalCommentSettings value) { return value.DefaultRateLimitSeconds; }, 60, 0, 3600);
+        }
     }
 
     private int RateLimitMaxPosts
     {
-        get { return GetModuleSettingInt("RateLimitMaxPosts", 5, 1, 100); }
+        get
+        {
+            var localValue = GetModuleSettingInt("RateLimitMaxPosts", 5, 1, 100);
+            return GetEffectivePortalInt(localValue, delegate(PortalCommentSettings value) { return value.DefaultRateLimitMaxPosts; }, 5, 1, 100);
+        }
     }
 
     private int RateLimitWindowMinutes
     {
-        get { return GetModuleSettingInt("RateLimitWindowMinutes", 15, 1, 1440); }
+        get
+        {
+            var localValue = GetModuleSettingInt("RateLimitWindowMinutes", 15, 1, 1440);
+            return GetEffectivePortalInt(localValue, delegate(PortalCommentSettings value) { return value.DefaultRateLimitWindowMinutes; }, 15, 1, 1440);
+        }
     }
 
     private bool EnableCaptcha
     {
-        get { return GetModuleSettingBool("EnableCaptcha", false); }
+        get
+        {
+            var localValue = GetModuleSettingBool("EnableCaptcha", false);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultEnableCaptcha; });
+        }
     }
 
     private bool EnableNotifications
     {
-        get { return GetModuleSettingBool("EnableNotifications", false); }
+        get
+        {
+            var localValue = GetModuleSettingBool("EnableNotifications", false);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultEnableNotifications; });
+        }
     }
 
     private string NotificationEmailAddresses
     {
-        get { return GetModuleSettingString("NotificationEmailAddresses", String.Empty); }
+        get
+        {
+            var localValue = GetModuleSettingString("NotificationEmailAddresses", String.Empty);
+            return GetEffectivePortalString(localValue, delegate(PortalCommentSettings value) { return value.DefaultNotificationEmailAddresses; });
+        }
     }
 
     private bool IncludeCommentTextInNotifications
     {
-        get { return GetModuleSettingBool("IncludeCommentTextInNotifications", true); }
+        get
+        {
+            var localValue = GetModuleSettingBool("IncludeCommentTextInNotifications", true);
+            return GetEffectivePortalBool(localValue, delegate(PortalCommentSettings value) { return value.DefaultIncludeCommentTextInNotifications; });
+        }
     }
 
     private bool CaptchaAppliesToCurrentUser
@@ -296,6 +410,12 @@
 
         pnlCommentForm.Visible = CanPostComments;
         pnlLoginRequired.Visible = !CanPostComments;
+        litPostingUnavailable.Text = Server.HtmlEncode(GetPostingUnavailableMessage());
+        lnkPortalSettings.Visible = CanManagePortalCommentSettings();
+        if (lnkPortalSettings.Visible)
+        {
+            lnkPortalSettings.NavigateUrl = EditUrl("PortalSettings");
+        }
         pnlGuestEmail.Visible = isGuest;
         pnlGuestNotice.Visible = isGuest;
         pnlCaptcha.Visible = CaptchaAppliesToCurrentUser;
@@ -438,7 +558,7 @@ ORDER BY CreatedOnDate ASC;";
 
         if (!CanPostComments)
         {
-            ShowMessage("Please sign in before posting a comment.", false);
+            ShowMessage(GetPostingUnavailableMessage(), false);
             ConfigureForm();
             BindComments();
             return;
@@ -847,6 +967,14 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
 
         if (String.Equals(e.CommandName, "EditComment", StringComparison.OrdinalIgnoreCase))
         {
+            if (!PortalPostingEnabled)
+            {
+                ShowMessage(GetPostingUnavailableMessage(), false);
+                ConfigureForm();
+                BindComments();
+                return;
+            }
+
             if (!IsRegisteredCommentUser)
             {
                 ShowMessage("Guest comments cannot be edited. Register or sign in before posting to receive the 15-minute edit window.", false);
@@ -883,7 +1011,7 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
         {
             if (!CanPostComments)
             {
-                ShowMessage("Please sign in before replying, or enable guest commenting in this module's settings.", false);
+                ShowMessage(GetPostingUnavailableMessage(), false);
                 ConfigureForm();
                 BindComments();
                 return;
@@ -964,7 +1092,7 @@ SELECT CONVERT(INT, SCOPE_IDENTITY());";
         isReply = false;
         errorMessage = "That comment cannot be edited.";
 
-        if (!IsRegisteredCommentUser || commentId <= 0)
+        if (!PortalPostingEnabled || !IsRegisteredCommentUser || commentId <= 0)
         {
             return false;
         }
@@ -1734,8 +1862,11 @@ WHERE PortalId = @PortalId
             return;
         }
 
-        var subjectPrefix = isEdit ? "Edited " : (isGuest ? "New guest " : "New ");
-        var subject = CleanEmailHeader(subjectPrefix + (isReply ? "reply" : "comment") + " on " + GetPortalName());
+        var pageTitle = GetPageTitle();
+        var subjectAction = !isApproved
+            ? "Comment awaiting approval"
+            : (isEdit ? "Comment edited" : "New comment");
+        var subject = CleanEmailHeader(subjectAction + " — " + pageTitle);
         var body = BuildNotificationBody(
             commentId,
             isReply,
@@ -1900,7 +2031,8 @@ WHERE PortalId = @PortalId
             + (isEdit ? " has been edited." : " has been submitted."));
         body.AppendLine();
         body.AppendLine("Portal: " + EncodeForNotification(GetPortalName()));
-        body.AppendLine("Page: " + EncodeForNotification(GetPageUrl()));
+        body.AppendLine("Page title: " + EncodeForNotification(GetPageTitle()));
+        body.AppendLine("Page link: " + EncodeForNotification(GetPageUrl()));
         body.AppendLine("Module: " + EncodeForNotification(ModuleConfiguration != null ? ModuleConfiguration.ModuleTitle : "Jacaranda Comments"));
         body.AppendLine("Comment ID: " + commentId);
         body.AppendLine("Author: " + EncodeForNotification(displayName));
@@ -1946,6 +2078,28 @@ WHERE PortalId = @PortalId
         }
 
         return "DNN site";
+    }
+
+    private string GetPageTitle()
+    {
+        try
+        {
+            if (PortalSettings != null && PortalSettings.ActiveTab != null)
+            {
+                var tabName = (PortalSettings.ActiveTab.TabName ?? String.Empty).Trim();
+
+                if (!String.IsNullOrWhiteSpace(tabName))
+                {
+                    return tabName;
+                }
+            }
+        }
+        catch
+        {
+            // Fall through to a safe, non-empty subject value.
+        }
+
+        return "DNN page";
     }
 
     private string GetPageUrl()
@@ -2052,6 +2206,180 @@ WHERE CommentId = @CommentId
 
             connection.Open();
             command.ExecuteNonQuery();
+        }
+    }
+
+    private string GetPostingUnavailableMessage()
+    {
+        if (!PortalPostingEnabled)
+        {
+            return "New comments and replies are temporarily disabled across this site. Existing comments remain available to read.";
+        }
+
+        if (!IsRegisteredCommentUser && !AllowGuestComments)
+        {
+            return "Please sign in to leave a comment or reply. Guest commenting is currently switched off for this module or portal.";
+        }
+
+        return "Comment posting is currently unavailable.";
+    }
+
+    private bool GetEffectivePortalBool(bool localValue, Func<PortalCommentSettings, bool> selector)
+    {
+        var settings = GetPortalCommentSettings();
+        return UsePortalSettings && settings.Available ? selector(settings) : localValue;
+    }
+
+    private string GetEffectivePortalString(string localValue, Func<PortalCommentSettings, string> selector)
+    {
+        var settings = GetPortalCommentSettings();
+        return UsePortalSettings && settings.Available ? (selector(settings) ?? String.Empty) : localValue;
+    }
+
+    private int GetEffectivePortalInt(
+        int localValue,
+        Func<PortalCommentSettings, int> selector,
+        int defaultValue,
+        int minimumValue,
+        int maximumValue)
+    {
+        var settings = GetPortalCommentSettings();
+        var value = UsePortalSettings && settings.Available ? selector(settings) : localValue;
+
+        if (value < minimumValue) value = minimumValue;
+        if (value > maximumValue) value = maximumValue;
+        return value;
+    }
+
+    private PortalCommentSettings GetPortalCommentSettings()
+    {
+        if (_portalCommentSettingsLoaded)
+        {
+            return _portalCommentSettings;
+        }
+
+        _portalCommentSettingsLoaded = true;
+        _portalCommentSettings = PortalCommentSettings.CreateDefaults();
+
+        try
+        {
+            using (var connection = new SqlConnection(ConnectionString))
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"
+SELECT PostingEnabled,
+       GuestPostingEnabled,
+       DefaultAllowGuestComments,
+       DefaultRequireApprovalForNonEditors,
+       DefaultEnableLanguageFilter,
+       DefaultBlockedLanguageTerms,
+       DefaultMaximumCommentLength,
+       DefaultEnableRateLimiting,
+       DefaultRateLimitSeconds,
+       DefaultRateLimitMaxPosts,
+       DefaultRateLimitWindowMinutes,
+       DefaultEnableCaptcha,
+       DefaultEnableNotifications,
+       DefaultNotificationEmailAddresses,
+       DefaultIncludeCommentTextInNotifications
+FROM " + PortalSettingsTable + @"
+WHERE PortalId = @PortalId;";
+                command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+                connection.Open();
+                _portalCommentSettings.Available = true;
+
+                using (var reader = command.ExecuteReader(CommandBehavior.SingleRow))
+                {
+                    if (!reader.Read())
+                    {
+                        return _portalCommentSettings;
+                    }
+
+                    _portalCommentSettings.PostingEnabled = ReadPortalBool(reader, "PostingEnabled", true);
+                    _portalCommentSettings.GuestPostingEnabled = ReadPortalBool(reader, "GuestPostingEnabled", true);
+                    _portalCommentSettings.DefaultAllowGuestComments = ReadPortalBool(reader, "DefaultAllowGuestComments", false);
+                    _portalCommentSettings.DefaultRequireApprovalForNonEditors = ReadPortalBool(reader, "DefaultRequireApprovalForNonEditors", true);
+                    _portalCommentSettings.DefaultEnableLanguageFilter = ReadPortalBool(reader, "DefaultEnableLanguageFilter", false);
+                    _portalCommentSettings.DefaultBlockedLanguageTerms = ReadPortalString(reader, "DefaultBlockedLanguageTerms", String.Empty);
+                    _portalCommentSettings.DefaultMaximumCommentLength = ReadPortalInt(reader, "DefaultMaximumCommentLength", 4000);
+                    _portalCommentSettings.DefaultEnableRateLimiting = ReadPortalBool(reader, "DefaultEnableRateLimiting", true);
+                    _portalCommentSettings.DefaultRateLimitSeconds = ReadPortalInt(reader, "DefaultRateLimitSeconds", 60);
+                    _portalCommentSettings.DefaultRateLimitMaxPosts = ReadPortalInt(reader, "DefaultRateLimitMaxPosts", 5);
+                    _portalCommentSettings.DefaultRateLimitWindowMinutes = ReadPortalInt(reader, "DefaultRateLimitWindowMinutes", 15);
+                    _portalCommentSettings.DefaultEnableCaptcha = ReadPortalBool(reader, "DefaultEnableCaptcha", false);
+                    _portalCommentSettings.DefaultEnableNotifications = ReadPortalBool(reader, "DefaultEnableNotifications", false);
+                    _portalCommentSettings.DefaultNotificationEmailAddresses = ReadPortalString(reader, "DefaultNotificationEmailAddresses", String.Empty);
+                    _portalCommentSettings.DefaultIncludeCommentTextInNotifications = ReadPortalBool(reader, "DefaultIncludeCommentTextInNotifications", true);
+                }
+            }
+        }
+        catch
+        {
+            _portalCommentSettings = PortalCommentSettings.CreateDefaults();
+            _portalCommentSettings.Available = false;
+        }
+
+        return _portalCommentSettings;
+    }
+
+    private static bool ReadPortalBool(IDataRecord record, string name, bool defaultValue)
+    {
+        var ordinal = record.GetOrdinal(name);
+        return record.IsDBNull(ordinal) ? defaultValue : Convert.ToBoolean(record.GetValue(ordinal));
+    }
+
+    private static int ReadPortalInt(IDataRecord record, string name, int defaultValue)
+    {
+        var ordinal = record.GetOrdinal(name);
+        return record.IsDBNull(ordinal) ? defaultValue : Convert.ToInt32(record.GetValue(ordinal));
+    }
+
+    private static string ReadPortalString(IDataRecord record, string name, string defaultValue)
+    {
+        var ordinal = record.GetOrdinal(name);
+        return record.IsDBNull(ordinal) ? defaultValue : Convert.ToString(record.GetValue(ordinal));
+    }
+
+    private sealed class PortalCommentSettings
+    {
+        public bool Available { get; set; }
+        public bool PostingEnabled { get; set; }
+        public bool GuestPostingEnabled { get; set; }
+        public bool DefaultAllowGuestComments { get; set; }
+        public bool DefaultRequireApprovalForNonEditors { get; set; }
+        public bool DefaultEnableLanguageFilter { get; set; }
+        public string DefaultBlockedLanguageTerms { get; set; }
+        public int DefaultMaximumCommentLength { get; set; }
+        public bool DefaultEnableRateLimiting { get; set; }
+        public int DefaultRateLimitSeconds { get; set; }
+        public int DefaultRateLimitMaxPosts { get; set; }
+        public int DefaultRateLimitWindowMinutes { get; set; }
+        public bool DefaultEnableCaptcha { get; set; }
+        public bool DefaultEnableNotifications { get; set; }
+        public string DefaultNotificationEmailAddresses { get; set; }
+        public bool DefaultIncludeCommentTextInNotifications { get; set; }
+
+        public static PortalCommentSettings CreateDefaults()
+        {
+            return new PortalCommentSettings
+            {
+                Available = false,
+                PostingEnabled = true,
+                GuestPostingEnabled = true,
+                DefaultAllowGuestComments = false,
+                DefaultRequireApprovalForNonEditors = true,
+                DefaultEnableLanguageFilter = false,
+                DefaultBlockedLanguageTerms = String.Empty,
+                DefaultMaximumCommentLength = 4000,
+                DefaultEnableRateLimiting = true,
+                DefaultRateLimitSeconds = 60,
+                DefaultRateLimitMaxPosts = 5,
+                DefaultRateLimitWindowMinutes = 15,
+                DefaultEnableCaptcha = false,
+                DefaultEnableNotifications = false,
+                DefaultNotificationEmailAddresses = String.Empty,
+                DefaultIncludeCommentTextInNotifications = true
+            };
         }
     }
 
@@ -2173,7 +2501,7 @@ WHERE CommentId = @CommentId
 
     protected bool CanEditComment(object commentUserId, object createdOnDate)
     {
-        if (!IsRegisteredCommentUser || commentUserId == null || commentUserId == DBNull.Value
+        if (!PortalPostingEnabled || !IsRegisteredCommentUser || commentUserId == null || commentUserId == DBNull.Value
             || createdOnDate == null || createdOnDate == DBNull.Value)
         {
             return false;
@@ -2952,8 +3280,15 @@ WHERE CommentId = @CommentId
 
 <div id="<%= PostRedirectMessageAnchorId %>" class="jacaranda-comments">
     <div class="jc-header">
-        <h2>Comments</h2>
-        <span class="jc-count"><asp:Literal ID="litCount" runat="server" /></span>
+        <div class="jc-header-title">
+            <h2>Comments</h2>
+            <span class="jc-count"><asp:Literal ID="litCount" runat="server" /></span>
+        </div>
+        <asp:HyperLink ID="lnkPortalSettings"
+                       runat="server"
+                       Visible="false"
+                       CssClass="jc-admin-settings"
+                       Text="Site-wide Comments Settings" />
     </div>
 
     <asp:Panel ID="pnlMessage"
@@ -3053,7 +3388,7 @@ WHERE CommentId = @CommentId
     </asp:Repeater>
 
     <asp:Panel ID="pnlLoginRequired" runat="server" CssClass="jc-login-required">
-        Please sign in to leave a comment or reply. Guest commenting is currently switched off for this module.
+        <asp:Literal ID="litPostingUnavailable" runat="server" />
     </asp:Panel>
 
     <asp:Panel ID="pnlCommentForm" runat="server" CssClass="jc-form">

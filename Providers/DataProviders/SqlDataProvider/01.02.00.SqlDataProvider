@@ -1,0 +1,34 @@
+-- Jacaranda Comments Advanced 01.02.00
+-- Adds portal-scoped central settings, emergency posting controls, portal defaults,
+-- and audit information. Existing module instances remain on local settings.
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaCommentsPortalSettings]')
+      AND type = N'U'
+)
+BEGIN
+    CREATE TABLE {databaseOwner}[{objectQualifier}JacarandaCommentsPortalSettings] (
+        [PortalId] INT NOT NULL,
+        [PostingEnabled] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_PostingEnabled] DEFAULT ((1)),
+        [GuestPostingEnabled] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_GuestPostingEnabled] DEFAULT ((1)),
+        [DefaultAllowGuestComments] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_AllowGuests] DEFAULT ((0)),
+        [DefaultRequireApprovalForNonEditors] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_RequireApproval] DEFAULT ((1)),
+        [DefaultEnableLanguageFilter] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_LanguageFilter] DEFAULT ((0)),
+        [DefaultBlockedLanguageTerms] NVARCHAR(MAX) NULL,
+        [DefaultMaximumCommentLength] INT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_MaxLength] DEFAULT ((4000)),
+        [DefaultEnableRateLimiting] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_RateLimiting] DEFAULT ((1)),
+        [DefaultRateLimitSeconds] INT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_RateSeconds] DEFAULT ((60)),
+        [DefaultRateLimitMaxPosts] INT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_RatePosts] DEFAULT ((5)),
+        [DefaultRateLimitWindowMinutes] INT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_RateWindow] DEFAULT ((15)),
+        [DefaultEnableCaptcha] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_Captcha] DEFAULT ((0)),
+        [DefaultEnableNotifications] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_Notifications] DEFAULT ((0)),
+        [DefaultNotificationEmailAddresses] NVARCHAR(2000) NULL,
+        [DefaultIncludeCommentTextInNotifications] BIT NOT NULL CONSTRAINT [DF_{objectQualifier}JCPS_IncludeText] DEFAULT ((1)),
+        [ModifiedOnDate] DATETIME NULL,
+        [ModifiedByUserId] INT NULL,
+        CONSTRAINT [PK_{objectQualifier}JacarandaCommentsPortalSettings] PRIMARY KEY CLUSTERED ([PortalId] ASC)
+    );
+END
+GO

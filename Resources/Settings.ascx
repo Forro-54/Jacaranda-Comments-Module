@@ -1,6 +1,10 @@
 <%@ Control Language="C#" AutoEventWireup="true" Inherits="DotNetNuke.Entities.Modules.ModuleSettingsBase" %>
 <%@ Import Namespace="System" %>
 <%@ Import Namespace="System.Collections.Generic" %>
+<%@ Import Namespace="System.Data" %>
+<%@ Import Namespace="System.Data.SqlClient" %>
+<%@ Import Namespace="DotNetNuke.Common.Utilities" %>
+<%@ Import Namespace="DotNetNuke.Data" %>
 <%@ Import Namespace="DotNetNuke.Entities.Modules" %>
 
 <script runat="server">
@@ -17,6 +21,9 @@
         {
             return;
         }
+
+        chkUsePortalSettings.Checked = GetSettingBool("UsePortalSettings", false);
+        ConfigurePortalSettingsAccess();
 
         chkAllowGuestComments.Checked = GetSettingBool("AllowGuestComments", false);
         chkRequireApproval.Checked = GetSettingBool("RequireApprovalForNonEditors", true);
@@ -42,6 +49,7 @@
     {
         var controller = new ModuleController();
 
+        controller.UpdateModuleSetting(ModuleId, Key("UsePortalSettings"), chkUsePortalSettings.Checked.ToString());
         controller.UpdateModuleSetting(ModuleId, Key("AllowGuestComments"), chkAllowGuestComments.Checked.ToString());
         controller.UpdateModuleSetting(ModuleId, Key("RequireApprovalForNonEditors"), chkRequireApproval.Checked.ToString());
 
@@ -179,10 +187,166 @@
 
         return new String(characters.ToArray());
     }
+
+    private string ConnectionString
+    {
+        get { return Config.GetConnectionString(); }
+    }
+
+    private string PortalSettingsTable
+    {
+        get
+        {
+            var provider = DataProvider.Instance();
+            var owner = CleanSqlIdentifierPart(provider.DatabaseOwner, "dbo");
+            var qualifier = CleanSqlIdentifierPart(provider.ObjectQualifier, String.Empty);
+            return "[" + owner + "].[" + qualifier + "JacarandaCommentsPortalSettings]";
+        }
+    }
+
+    private void ConfigurePortalSettingsAccess()
+    {
+        var canManage = CanManagePortalSettings();
+        pnlPortalSettingsLink.Visible = canManage;
+
+        if (canManage)
+        {
+            lnkPortalSettings.NavigateUrl = EditUrl("PortalSettings");
+        }
+
+        litInheritanceStatus.Text = chkUsePortalSettings.Checked
+            ? "This module currently inherits the portal defaults. Its local values remain stored and will be restored if inheritance is later switched off."
+            : "This module currently uses its own local settings. Upgrading does not opt existing modules into central control.";
+
+        LoadPortalEmergencySummary();
+    }
+
+    private bool CanManagePortalSettings()
+    {
+        if (UserInfo == null)
+        {
+            return false;
+        }
+
+        if (UserInfo.IsSuperUser)
+        {
+            return true;
+        }
+
+        var administratorRoleName = PortalSettings == null
+            ? String.Empty
+            : (PortalSettings.AdministratorRoleName ?? String.Empty).Trim();
+
+        return !String.IsNullOrWhiteSpace(administratorRoleName)
+            && UserInfo.IsInRole(administratorRoleName);
+    }
+
+    private void LoadPortalEmergencySummary()
+    {
+        try
+        {
+            using (var connection = new SqlConnection(ConnectionString))
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"
+SELECT PostingEnabled,
+       GuestPostingEnabled,
+       ModifiedOnDate,
+       ModifiedByUserId
+FROM " + PortalSettingsTable + @"
+WHERE PortalId = @PortalId;";
+                command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+                connection.Open();
+
+                using (var reader = command.ExecuteReader(CommandBehavior.SingleRow))
+                {
+                    if (!reader.Read())
+                    {
+                        litPortalEmergencyStatus.Text = "Portal emergency controls: posting enabled; guest posting permitted where a module allows it. No central settings have been saved yet.";
+                        return;
+                    }
+
+                    var postingEnabled = !reader.IsDBNull(0) && Convert.ToBoolean(reader.GetValue(0));
+                    var guestPostingEnabled = !reader.IsDBNull(1) && Convert.ToBoolean(reader.GetValue(1));
+                    var modifiedText = String.Empty;
+
+                    if (!reader.IsDBNull(2))
+                    {
+                        var modified = DateTime.SpecifyKind(Convert.ToDateTime(reader.GetValue(2)), DateTimeKind.Utc);
+                        var modifiedBy = reader.IsDBNull(3) ? -1 : Convert.ToInt32(reader.GetValue(3));
+                        modifiedText = " Last changed " + modified.ToString("dd MMM yyyy, h:mm tt") + " UTC by DNN user ID " + modifiedBy + ".";
+                    }
+
+                    litPortalEmergencyStatus.Text = "Portal emergency controls: "
+                        + (postingEnabled ? "posting enabled" : "ALL NEW POSTING DISABLED")
+                        + "; "
+                        + (guestPostingEnabled ? "guest posting permitted where allowed" : "GUEST POSTING DISABLED PORTAL-WIDE")
+                        + "."
+                        + modifiedText;
+                }
+            }
+        }
+        catch
+        {
+            litPortalEmergencyStatus.Text = "Portal emergency-control status could not be read. Check the DNN Event Viewer if the 01.02.00 database upgrade did not complete.";
+        }
+    }
+
+    private static string CleanSqlIdentifierPart(string value, string defaultValue)
+    {
+        value = (value ?? String.Empty).Trim();
+
+        if (value.EndsWith(".", StringComparison.Ordinal))
+        {
+            value = value.Substring(0, value.Length - 1);
+        }
+
+        value = value.Replace("[", String.Empty).Replace("]", String.Empty).Trim();
+
+        if (String.IsNullOrEmpty(value))
+        {
+            return defaultValue ?? String.Empty;
+        }
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+            {
+                return defaultValue ?? String.Empty;
+            }
+        }
+
+        return value;
+    }
 </script>
 
 <div class="jacaranda-comments jc-settings">
     <h2>Jacaranda Comments Settings</h2>
+
+    <fieldset class="jc-settings-section jc-inheritance-settings">
+        <legend>Central settings</legend>
+
+        <div class="jc-setting-row">
+            <asp:CheckBox ID="chkUsePortalSettings"
+                          runat="server"
+                          Text="Use site-wide Jacaranda Comments defaults for this module" />
+            <p class="jc-setting-help">
+                Default: off. Existing modules continue using their current local settings after upgrade. When enabled, the local values below remain stored but are ignored until this option is switched off again.
+            </p>
+        </div>
+
+        <p class="jc-inheritance-status"><asp:Literal ID="litInheritanceStatus" runat="server" /></p>
+        <p class="jc-portal-emergency-status"><asp:Literal ID="litPortalEmergencyStatus" runat="server" /></p>
+
+        <asp:Panel ID="pnlPortalSettingsLink" runat="server" Visible="false" CssClass="jc-central-settings-link">
+            <asp:HyperLink ID="lnkPortalSettings"
+                           runat="server"
+                           CssClass="jc-secondary-button"
+                           Text="Open Site-wide Comments Settings" />
+            <p class="jc-setting-help">This administrator-only panel controls portal defaults and emergency switches for every Jacaranda Comments instance in this portal.</p>
+        </asp:Panel>
+    </fieldset>
 
     <fieldset class="jc-settings-section">
         <legend>Guest commenting</legend>
@@ -372,6 +536,6 @@
     </fieldset>
 
     <p class="jc-note">
-        Settings are stored as DNN module settings, so each instance can independently allow or block guest posting and use its own comment length, moderation, notification, and anti-spam behaviour.
+        Local values remain stored as DNN module settings. Each instance can either keep those values or deliberately inherit the portal-wide defaults. Portal emergency switches always take priority.
     </p>
 </div>
