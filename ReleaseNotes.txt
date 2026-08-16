@@ -1,4 +1,45 @@
-﻿Jacaranda Comments 01.01.03
+Jacaranda Comments Advanced 01.02.02
+- Adds a secure five-minute correction window for newly submitted guest comments and replies while they remain pending moderation.
+- Allows guests to correct only the comment/reply text; guest display name and private email remain locked.
+- Keeps the five-minute window anchored to the original CreatedOnDate so editing never restarts or extends the timer.
+- Ends guest editing immediately when the submission is approved, deleted, the portal guest-posting switch is disabled, all posting is disabled, or the five-minute window expires; approval/deletion also clears the stored token hash.
+- Generates a cryptographically strong server-session guest edit credential and stores only its SHA-256 hash with the guest submission.
+- Never exposes the raw guest edit credential in the database, URL, hidden fields, rendered HTML, email, or public output.
+- Does not use guest name, email address, IP address, user-agent text, CommentId alone, or the guest rate-limit key as proof of edit ownership.
+- Repeats portal, page, module, ownership-token, pending-status, deletion-status, and five-minute checks in the parameterised SQL UPDATE.
+- Shows a guest only their own recent pending submission while the correction credential remains valid, allowing the existing module Edit action to be used safely; Reply remains unavailable until a pending submission is approved.
+- Re-evaluates the private language filter after a guest correction and keeps every guest correction pending for moderator approval.
+- Adds GuestEditTokenHash NVARCHAR(64) NULL; existing guest comments remain non-editable because they have no token hash.
+- Keeps the registered-user 15-minute edit window, portal-wide moderation queue, central settings, approval/deletion permissions, CAPTCHA, rate limiting, output encoding, and notification behaviour intact.
+
+Jacaranda Comments Advanced 01.02.01
+- Adds a portal-wide Pending Comments moderation queue to the Advanced administration panel.
+- Shows unapproved comments and replies from every Jacaranda Comments module in the current portal, newest first, with 25 items per page.
+- Shows the DNN page title, module title, comment/reply type, comment ID, author type, submission date, full safely encoded text, and private language-filter marker.
+- Adds one-at-a-time Approve, Reject / Delete, and View Page actions; no bulk moderation actions are included.
+- Restricts central moderation to DNN superusers and members of the current portal's built-in Administrators role.
+- Repeats the portal administrator/superuser permission check and anti-CSRF security-token validation before every central moderation write.
+- Scopes central approval and deletion by the server-derived PortalId and uses parameterised SQL.
+- Reject / Delete soft-deletes the selected submission and any descendant replies within the same portal.
+- View Page opens the originating DNN page and targets the module-scoped comment anchor when available.
+- Renames the central navigation label to Comments Administration to reflect both moderation and site-wide settings.
+- Adds a portal-moderation database index for efficient pending-queue queries; no comment records or module settings are changed.
+
+Jacaranda Comments Advanced 01.02.00
+- Starts the Advanced release line from the stable 01.01.03 code base; the stable Simple edition remains on the main branch at 01.01.03.
+- Keeps the existing DNN package identity and installation folder, so Advanced is an upgrade path rather than a second side-by-side module.
+- Adds one portal-scoped Site-wide Jacaranda Comments Settings panel, reachable from each module instance by DNN superusers and members of the portal's built-in Administrators role.
+- Creates no new DNN security roles and repeats the administrator/superuser permission check on every central-panel request and save.
+- Adds portal-wide emergency switches for all new posting and for guest posting; existing comments remain visible and moderation remains available when posting is disabled.
+- Adds portal defaults for guest posting, moderation, language filtering, comment length, rate limiting, CAPTCHA, and notification behaviour.
+- Adds a per-module “Use site-wide defaults” option that is switched off by default, preserving every existing module's local settings after upgrade.
+- Keeps local values stored while inheritance is enabled so switching back to local settings restores the previous configuration.
+- Scopes all central reads and writes by server-derived PortalId and uses parameterised SQL.
+- Adds anti-CSRF validation, server-side value limits, administrator confirmation for portal-wide saves, and audit fields recording the UTC change time and DNN user ID.
+- Shows administrators whether a module is inherited or local and displays the current portal emergency-control state.
+- Adds the JacarandaCommentsPortalSettings database table; existing comments and module settings are not modified.
+
+Jacaranda Comments 01.01.03
 - Uses the current DNN page title in moderator notification email subjects.
 - Uses the exact pending subject format “Comment awaiting approval — [Page title]” for comments and replies requiring moderation.
 - Uses “New comment — [Page title]” for immediately approved new submissions and “Comment edited — [Page title]” for approved edits.

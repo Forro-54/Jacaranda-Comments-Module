@@ -1,0 +1,18 @@
+-- Jacaranda Comments Advanced 01.02.02
+-- Adds a hashed guest edit credential for the five-minute guest correction window.
+-- Existing guest comments remain non-editable because their token hash is NULL.
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaComments]')
+      AND type = N'U'
+)
+BEGIN
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaComments', 'GuestEditTokenHash') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaComments]
+        ADD [GuestEditTokenHash] NVARCHAR(64) NULL;
+    END
+END
+GO
