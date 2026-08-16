@@ -14,6 +14,7 @@
     private const int MaximumBlockedTermCount = 250;
     private const int MaximumBlockedTermLength = 100;
     private const int MaximumNotificationAddressLength = 2000;
+    private const int PendingCommentsPageSize = 25;
     private const string SecurityTokenSessionKeyPrefix = "JacarandaComments_PortalSettingsSecurityToken_";
 
     private string ConnectionString
@@ -30,6 +31,32 @@
             var qualifier = CleanSqlIdentifierPart(provider.ObjectQualifier, String.Empty);
             return "[" + owner + "].[" + qualifier + "JacarandaCommentsPortalSettings]";
         }
+    }
+
+    private string CommentsTable
+    {
+        get { return GetDnnTableName("JacarandaComments"); }
+    }
+
+    private string TabsTable
+    {
+        get { return GetDnnTableName("Tabs"); }
+    }
+
+    private string TabModulesTable
+    {
+        get { return GetDnnTableName("TabModules"); }
+    }
+
+    private int PendingCommentsPageIndex
+    {
+        get
+        {
+            var value = ViewState["JacarandaCommentsPendingPageIndex"];
+            var pageIndex = value == null ? 0 : Convert.ToInt32(value);
+            return pageIndex < 0 ? 0 : pageIndex;
+        }
+        set { ViewState["JacarandaCommentsPendingPageIndex"] = value < 0 ? 0 : value; }
     }
 
     private string SecurityTokenSessionKey
@@ -55,6 +82,7 @@
             if (!IsPostBack)
             {
                 EnsureSecurityToken();
+                LoadPendingComments();
                 LoadPortalSettings();
             }
         }
@@ -90,6 +118,7 @@
 
             SavePortalSettings();
             EnsureSecurityToken(true);
+            LoadPendingComments();
             LoadPortalSettings();
             ShowMessage("Site-wide Jacaranda Comments settings have been saved.", true);
         }
@@ -97,6 +126,301 @@
         {
             Exceptions.ProcessModuleLoadException(this, ex);
         }
+    }
+
+    protected void rptPendingComments_ItemCommand(object source, System.Web.UI.WebControls.RepeaterCommandEventArgs e)
+    {
+        try
+        {
+            if (!CanManagePortalSettings())
+            {
+                Response.StatusCode = 403;
+                ShowMessage("You are not authorised to moderate comments across this portal.", false);
+                return;
+            }
+
+            if (!ValidateSecurityToken())
+            {
+                ShowMessage("For your safety, please refresh the page and try again.", false);
+                return;
+            }
+
+            int commentId;
+            if (!Int32.TryParse(Convert.ToString(e.CommandArgument), out commentId) || commentId <= 0)
+            {
+                ShowMessage("The selected comment could not be identified.", false);
+                LoadPendingComments();
+                return;
+            }
+
+            if (String.Equals(e.CommandName, "ApprovePending", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ApprovePendingComment(commentId))
+                {
+                    ShowMessage("The submission has been approved.", true);
+                }
+                else
+                {
+                    ShowMessage("The comment was not changed. It may already have been moderated or deleted.", false);
+                }
+            }
+            else if (String.Equals(e.CommandName, "DeletePending", StringComparison.OrdinalIgnoreCase))
+            {
+                if (SoftDeletePendingCommentTree(commentId))
+                {
+                    ShowMessage("The submission has been rejected and removed from view.", true);
+                }
+                else
+                {
+                    ShowMessage("The comment was not changed. It may already have been moderated or deleted.", false);
+                }
+            }
+
+            LoadPendingComments();
+        }
+        catch (Exception ex)
+        {
+            Exceptions.ProcessModuleLoadException(this, ex);
+        }
+    }
+
+    protected void btnPendingPrevious_Click(object sender, EventArgs e)
+    {
+        if (!CanManagePortalSettings())
+        {
+            Response.StatusCode = 403;
+            return;
+        }
+
+        PendingCommentsPageIndex = Math.Max(0, PendingCommentsPageIndex - 1);
+        LoadPendingComments();
+    }
+
+    protected void btnPendingNext_Click(object sender, EventArgs e)
+    {
+        if (!CanManagePortalSettings())
+        {
+            Response.StatusCode = 403;
+            return;
+        }
+
+        PendingCommentsPageIndex = PendingCommentsPageIndex + 1;
+        LoadPendingComments();
+    }
+
+    private void LoadPendingComments()
+    {
+        var totalCount = 0;
+        var pageIndex = PendingCommentsPageIndex;
+        var table = new DataTable();
+
+        using (var connection = new SqlConnection(ConnectionString))
+        {
+            connection.Open();
+
+            using (var countCommand = connection.CreateCommand())
+            {
+                countCommand.CommandText = @"
+SELECT COUNT(*)
+FROM " + CommentsTable + @"
+WHERE PortalId = @PortalId
+  AND IsApproved = 0
+  AND IsDeleted = 0;";
+                countCommand.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+                totalCount = Convert.ToInt32(countCommand.ExecuteScalar());
+            }
+
+            var totalPages = totalCount == 0
+                ? 0
+                : (int)Math.Ceiling(totalCount / (double)PendingCommentsPageSize);
+
+            if (totalPages > 0 && pageIndex >= totalPages)
+            {
+                pageIndex = totalPages - 1;
+                PendingCommentsPageIndex = pageIndex;
+            }
+            else if (totalPages == 0)
+            {
+                pageIndex = 0;
+                PendingCommentsPageIndex = 0;
+            }
+
+            if (totalCount > 0)
+            {
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+SELECT c.CommentId,
+       c.TabId,
+       c.ModuleId,
+       c.ParentCommentId,
+       c.UserId,
+       c.DisplayName,
+       c.CommentText,
+       c.IsLanguageFlagged,
+       c.CreatedOnDate,
+       t.TabName AS PageTitle,
+       tm.ModuleTitle
+FROM " + CommentsTable + @" c
+LEFT JOIN " + TabsTable + @" t
+       ON t.TabID = c.TabId
+      AND t.PortalID = c.PortalId
+LEFT JOIN " + TabModulesTable + @" tm
+       ON tm.TabID = c.TabId
+      AND tm.ModuleID = c.ModuleId
+WHERE c.PortalId = @PortalId
+  AND c.IsApproved = 0
+  AND c.IsDeleted = 0
+ORDER BY c.CreatedOnDate DESC, c.CommentId DESC
+OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+                    command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+                    command.Parameters.Add("@Offset", SqlDbType.Int).Value = pageIndex * PendingCommentsPageSize;
+                    command.Parameters.Add("@PageSize", SqlDbType.Int).Value = PendingCommentsPageSize;
+
+                    using (var adapter = new SqlDataAdapter(command))
+                    {
+                        adapter.Fill(table);
+                    }
+                }
+            }
+        }
+
+        rptPendingComments.DataSource = table;
+        rptPendingComments.DataBind();
+        pnlNoPendingComments.Visible = totalCount == 0;
+
+        litPendingSummary.Text = totalCount == 1
+            ? "1 comment is waiting for approval across this portal."
+            : totalCount.ToString() + " comments are waiting for approval across this portal.";
+
+        var pageCount = totalCount == 0
+            ? 0
+            : (int)Math.Ceiling(totalCount / (double)PendingCommentsPageSize);
+        pnlPendingPager.Visible = pageCount > 1;
+        btnPendingPrevious.Enabled = pageIndex > 0;
+        btnPendingNext.Enabled = pageCount > 0 && pageIndex < pageCount - 1;
+        litPendingPage.Text = pageCount > 0
+            ? "Page " + (pageIndex + 1).ToString() + " of " + pageCount.ToString()
+            : String.Empty;
+    }
+
+    private bool ApprovePendingComment(int commentId)
+    {
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+UPDATE " + CommentsTable + @"
+SET IsApproved = 1,
+    GuestEditTokenHash = NULL,
+    LastModifiedOnDate = GETUTCDATE(),
+    LastModifiedByUserId = @UserId
+WHERE CommentId = @CommentId
+  AND PortalId = @PortalId
+  AND IsApproved = 0
+  AND IsDeleted = 0;";
+            command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
+            command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            connection.Open();
+            return command.ExecuteNonQuery() == 1;
+        }
+    }
+
+    private bool SoftDeletePendingCommentTree(int commentId)
+    {
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+;WITH CommentTree AS
+(
+    SELECT CommentId
+    FROM " + CommentsTable + @"
+    WHERE CommentId = @CommentId
+      AND PortalId = @PortalId
+      AND IsDeleted = 0
+
+    UNION ALL
+
+    SELECT child.CommentId
+    FROM " + CommentsTable + @" child
+    INNER JOIN CommentTree parentComment
+            ON child.ParentCommentId = parentComment.CommentId
+    WHERE child.PortalId = @PortalId
+      AND child.IsDeleted = 0
+)
+UPDATE target
+SET IsDeleted = 1,
+    GuestEditTokenHash = NULL,
+    LastModifiedOnDate = GETUTCDATE(),
+    LastModifiedByUserId = @UserId
+FROM " + CommentsTable + @" target
+INNER JOIN CommentTree tree
+        ON tree.CommentId = target.CommentId
+OPTION (MAXRECURSION 100);";
+            command.Parameters.Add("@CommentId", SqlDbType.Int).Value = commentId;
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            command.Parameters.Add("@UserId", SqlDbType.Int).Value = UserId;
+            connection.Open();
+            return command.ExecuteNonQuery() > 0;
+        }
+    }
+
+    protected string PendingPageTitle(object pageTitle, object tabId)
+    {
+        var value = Convert.ToString(pageTitle);
+        if (!String.IsNullOrWhiteSpace(value)) return Server.HtmlEncode(value.Trim());
+        return "Page " + Server.HtmlEncode(Convert.ToString(tabId));
+    }
+
+    protected string PendingModuleTitle(object moduleTitle, object moduleId)
+    {
+        var value = Convert.ToString(moduleTitle);
+        if (!String.IsNullOrWhiteSpace(value)) return Server.HtmlEncode(value.Trim());
+        return "Module " + Server.HtmlEncode(Convert.ToString(moduleId));
+    }
+
+    protected string PendingSubmissionType(object parentCommentId)
+    {
+        return parentCommentId == null || parentCommentId == DBNull.Value
+            ? "Comment"
+            : "Reply";
+    }
+
+    protected string PendingAuthorType(object userId)
+    {
+        return userId == null || userId == DBNull.Value ? "Guest" : "Registered user";
+    }
+
+    protected string PendingCommentBody(object value)
+    {
+        var encoded = Server.HtmlEncode(Convert.ToString(value) ?? String.Empty);
+        return encoded.Replace("\r\n", "<br />").Replace("\n", "<br />").Replace("\r", "<br />");
+    }
+
+    protected string PendingCreatedDate(object value)
+    {
+        if (value == null || value == DBNull.Value) return String.Empty;
+        return Server.HtmlEncode(FormatUtc(Convert.ToDateTime(value)));
+    }
+
+    protected bool PendingLanguageFlagVisible(object value)
+    {
+        return value != null && value != DBNull.Value && Convert.ToBoolean(value);
+    }
+
+    protected string PendingViewUrl(object tabId, object moduleId, object commentId)
+    {
+        int parsedTabId;
+        int parsedModuleId;
+        int parsedCommentId;
+        if (!Int32.TryParse(Convert.ToString(tabId), out parsedTabId) || parsedTabId <= 0) return String.Empty;
+        if (!Int32.TryParse(Convert.ToString(moduleId), out parsedModuleId) || parsedModuleId <= 0) return String.Empty;
+        if (!Int32.TryParse(Convert.ToString(commentId), out parsedCommentId) || parsedCommentId <= 0) return String.Empty;
+
+        return DotNetNuke.Common.Globals.NavigateURL(parsedTabId, String.Empty)
+            + "#jacaranda-comment-" + parsedModuleId.ToString() + "-" + parsedCommentId.ToString();
     }
 
     protected void btnCancel_Click(object sender, EventArgs e)
@@ -478,6 +802,19 @@ END";
         return DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("dd MMM yyyy, h:mm tt") + " UTC";
     }
 
+    private string GetDnnTableName(string tableName)
+    {
+        var provider = DataProvider.Instance();
+        var owner = CleanSqlIdentifierPart(provider.DatabaseOwner, "dbo");
+        var qualifier = CleanSqlIdentifierPart(provider.ObjectQualifier, String.Empty);
+        var cleanTableName = CleanSqlIdentifierPart(tableName, String.Empty);
+        if (String.IsNullOrEmpty(cleanTableName))
+        {
+            throw new InvalidOperationException("A valid DNN table name is required.");
+        }
+        return "[" + owner + "].[" + qualifier + cleanTableName + "]";
+    }
+
     private static string CleanSqlIdentifierPart(string value, string defaultValue)
     {
         value = (value ?? String.Empty).Trim();
@@ -545,13 +882,13 @@ END";
 
 <div class="jacaranda-comments jc-settings jc-portal-settings">
     <asp:Panel ID="pnlAccessDenied" runat="server" Visible="false" CssClass="jc-message jc-message-error">
-        Site-wide Jacaranda Comments settings are restricted to DNN portal administrators and superusers.
+        Jacaranda Comments administration is restricted to DNN portal administrators and superusers.
     </asp:Panel>
 
     <asp:Panel ID="pnlPortalSettings" runat="server">
-        <h2>Site-wide Jacaranda Comments Settings</h2>
+        <h2>Jacaranda Comments Administration</h2>
         <p class="jc-setting-help">
-            These settings apply only to this DNN portal. Emergency switches affect every Jacaranda Comments instance in the portal. Defaults affect only modules that explicitly choose to inherit site-wide settings.
+            Moderate pending comments from every Jacaranda Comments instance in this DNN portal, then manage the portal-wide emergency controls and defaults below.
         </p>
 
         <asp:Panel ID="pnlMessage" runat="server" Visible="false" CssClass="jc-message">
@@ -560,20 +897,90 @@ END";
 
         <asp:HiddenField ID="hdnSecurityToken" runat="server" />
 
+        <fieldset class="jc-settings-section jc-moderation-section">
+            <legend>Pending comments</legend>
+            <p class="jc-setting-help">
+                This queue shows unapproved comments and replies from every Jacaranda Comments module in the current portal. Approve or reject one submission at a time.
+            </p>
+            <div class="jc-moderation-summary"><asp:Literal ID="litPendingSummary" runat="server" /></div>
+
+            <asp:Panel ID="pnlNoPendingComments" runat="server" CssClass="jc-empty" Visible="false">
+                No comments are currently waiting for approval on this portal.
+            </asp:Panel>
+
+            <asp:Repeater ID="rptPendingComments" runat="server" OnItemCommand="rptPendingComments_ItemCommand">
+                <ItemTemplate>
+                    <article class="jc-moderation-item">
+                        <header class="jc-moderation-item-header">
+                            <div>
+                                <strong class="jc-moderation-page"><%# PendingPageTitle(Eval("PageTitle"), Eval("TabId")) %></strong>
+                                <span class="jc-moderation-module"><%# PendingModuleTitle(Eval("ModuleTitle"), Eval("ModuleId")) %></span>
+                            </div>
+                            <div class="jc-moderation-meta">
+                                <%# PendingSubmissionType(Eval("ParentCommentId")) %> #<%# Eval("CommentId") %>
+                                &middot; <%# PendingCreatedDate(Eval("CreatedOnDate")) %>
+                            </div>
+                        </header>
+
+                        <div class="jc-moderation-author">
+                            <strong><%# Server.HtmlEncode(Convert.ToString(Eval("DisplayName"))) %></strong>
+                            <span><%# PendingAuthorType(Eval("UserId")) %></span>
+                            <asp:Label ID="lblPendingLanguageFlag"
+                                       runat="server"
+                                       CssClass="jc-language-flag"
+                                       Text="Language filter"
+                                       ToolTip="This submission matched the private language filter and requires moderator review."
+                                       Visible='<%# PendingLanguageFlagVisible(Eval("IsLanguageFlagged")) %>' />
+                        </div>
+
+                        <div class="jc-moderation-body"><%# PendingCommentBody(Eval("CommentText")) %></div>
+
+                        <div class="jc-moderation-actions">
+                            <asp:LinkButton ID="btnApprovePending"
+                                            runat="server"
+                                            CommandName="ApprovePending"
+                                            CommandArgument='<%# Eval("CommentId") %>'
+                                            CssClass="jc-submit jc-moderation-action"
+                                            CausesValidation="false">Approve</asp:LinkButton>
+                            <asp:LinkButton ID="btnDeletePending"
+                                            runat="server"
+                                            CommandName="DeletePending"
+                                            CommandArgument='<%# Eval("CommentId") %>'
+                                            CssClass="jc-secondary-button jc-moderation-action jc-moderation-delete"
+                                            CausesValidation="false"
+                                            OnClientClick="return confirm('Reject this pending submission and hide it and any replies from view?');">Reject / Delete</asp:LinkButton>
+                            <asp:HyperLink ID="lnkViewPendingPage"
+                                           runat="server"
+                                           CssClass="jc-admin-settings jc-moderation-action"
+                                           Target="_blank"
+                                           rel="noopener"
+                                           NavigateUrl='<%# PendingViewUrl(Eval("TabId"), Eval("ModuleId"), Eval("CommentId")) %>'>View Page</asp:HyperLink>
+                        </div>
+                    </article>
+                </ItemTemplate>
+            </asp:Repeater>
+
+            <asp:Panel ID="pnlPendingPager" runat="server" CssClass="jc-moderation-pager" Visible="false">
+                <asp:Button ID="btnPendingPrevious" runat="server" Text="Previous" CssClass="jc-secondary-button" CausesValidation="false" OnClick="btnPendingPrevious_Click" />
+                <span class="jc-moderation-page-number"><asp:Literal ID="litPendingPage" runat="server" /></span>
+                <asp:Button ID="btnPendingNext" runat="server" Text="Next" CssClass="jc-secondary-button" CausesValidation="false" OnClick="btnPendingNext_Click" />
+            </asp:Panel>
+        </fieldset>
+
         <fieldset class="jc-settings-section jc-emergency-settings">
             <legend>Emergency controls</legend>
 
             <div class="jc-setting-row">
                 <asp:CheckBox ID="chkPostingEnabled" runat="server" Text="Allow new comments and replies anywhere on this portal" />
                 <p class="jc-setting-warning">
-                    Clearing this switch immediately disables all new comments and replies across the portal. Existing comments remain visible and moderators can still approve or delete them.
+                    Clearing this switch immediately disables all new comments, replies, and author correction/edit actions across the portal. Existing comments remain visible and moderators can still approve or delete them.
                 </p>
             </div>
 
             <div class="jc-setting-row">
                 <asp:CheckBox ID="chkGuestPostingEnabled" runat="server" Text="Allow guest posting anywhere on this portal" />
                 <p class="jc-setting-warning">
-                    Clearing this switch disables guest posting across every module, even where a local module setting or inherited default would otherwise allow guests. Registered-user posting is unaffected.
+                    Clearing this switch disables guest posting and any still-open guest correction window across every module, even where a local module setting or inherited default would otherwise allow guests. Registered-user posting is unaffected.
                 </p>
             </div>
         </fieldset>

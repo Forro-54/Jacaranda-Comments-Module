@@ -343,8 +343,8 @@ WHERE PortalId = @PortalId;";
             <asp:HyperLink ID="lnkPortalSettings"
                            runat="server"
                            CssClass="jc-secondary-button"
-                           Text="Open Site-wide Comments Settings" />
-            <p class="jc-setting-help">This administrator-only panel controls portal defaults and emergency switches for every Jacaranda Comments instance in this portal.</p>
+                           Text="Open Comments Administration" />
+            <p class="jc-setting-help">This administrator-only panel provides portal-wide pending moderation, defaults, and emergency switches for every Jacaranda Comments instance in this portal.</p>
         </asp:Panel>
     </fieldset>
 
@@ -356,7 +356,7 @@ WHERE PortalId = @PortalId;";
                           runat="server"
                           Text="Allow signed-out visitors to submit guest comments and replies" />
             <p class="jc-setting-help">
-                Default: off. Guest name and email are required, the email is never shown publicly, and every guest submission is held for approval. Guests cannot edit after submitting; they must register or sign in before posting to receive the 15-minute edit window.
+                Default: off. Guest name and email are required, the email is never shown publicly, and every guest submission is held for approval. Guests may correct only their submitted text for up to 5 minutes while it remains awaiting approval; registered authors receive the 15-minute edit window.
             </p>
             <p class="jc-setting-warning">
                 For public guest commenting, enable CAPTCHA and keep rate limiting enabled. You can turn guest commenting off immediately without affecting existing comments.
