@@ -121,10 +121,6 @@
         get { return UserInfo != null && UserId > -1 && !UserInfo.IsDeleted; }
     }
 
-    private bool UsePortalSettings
-    {
-        get { return GetModuleSettingBool("UsePortalSettings", false); }
-    }
 
     private bool PortalPostingEnabled
     {
@@ -2521,7 +2517,7 @@ WHERE CommentId = @CommentId
 
         if (!IsRegisteredCommentUser && !AllowGuestComments)
         {
-            return "Please sign in to leave a comment or reply. Guest commenting is currently switched off for this module or portal.";
+            return "Please sign in to leave a comment or reply. Guest commenting is currently switched off.";
         }
 
         return "Comment posting is currently unavailable.";
@@ -2530,13 +2526,13 @@ WHERE CommentId = @CommentId
     private bool GetEffectivePortalBool(bool localValue, Func<PortalCommentSettings, bool> selector)
     {
         var settings = GetPortalCommentSettings();
-        return UsePortalSettings && settings.Available ? selector(settings) : localValue;
+        return settings.Available && settings.CentralSettingsActive ? selector(settings) : localValue;
     }
 
     private string GetEffectivePortalString(string localValue, Func<PortalCommentSettings, string> selector)
     {
         var settings = GetPortalCommentSettings();
-        return UsePortalSettings && settings.Available ? (selector(settings) ?? String.Empty) : localValue;
+        return settings.Available && settings.CentralSettingsActive ? (selector(settings) ?? String.Empty) : localValue;
     }
 
     private int GetEffectivePortalInt(
@@ -2547,7 +2543,7 @@ WHERE CommentId = @CommentId
         int maximumValue)
     {
         var settings = GetPortalCommentSettings();
-        var value = UsePortalSettings && settings.Available ? selector(settings) : localValue;
+        var value = settings.Available && settings.CentralSettingsActive ? selector(settings) : localValue;
 
         if (value < minimumValue) value = minimumValue;
         if (value > maximumValue) value = maximumValue;
@@ -2572,6 +2568,7 @@ WHERE CommentId = @CommentId
                 command.CommandText = @"
 SELECT PostingEnabled,
        GuestPostingEnabled,
+       CentralSettingsActive,
        DefaultAllowGuestComments,
        DefaultRequireApprovalForNonEditors,
        DefaultEnableLanguageFilter,
@@ -2600,6 +2597,7 @@ WHERE PortalId = @PortalId;";
 
                     _portalCommentSettings.PostingEnabled = ReadPortalBool(reader, "PostingEnabled", true);
                     _portalCommentSettings.GuestPostingEnabled = ReadPortalBool(reader, "GuestPostingEnabled", true);
+                    _portalCommentSettings.CentralSettingsActive = ReadPortalBool(reader, "CentralSettingsActive", false);
                     _portalCommentSettings.DefaultAllowGuestComments = ReadPortalBool(reader, "DefaultAllowGuestComments", false);
                     _portalCommentSettings.DefaultRequireApprovalForNonEditors = ReadPortalBool(reader, "DefaultRequireApprovalForNonEditors", true);
                     _portalCommentSettings.DefaultEnableLanguageFilter = ReadPortalBool(reader, "DefaultEnableLanguageFilter", false);
@@ -2648,6 +2646,7 @@ WHERE PortalId = @PortalId;";
         public bool Available { get; set; }
         public bool PostingEnabled { get; set; }
         public bool GuestPostingEnabled { get; set; }
+        public bool CentralSettingsActive { get; set; }
         public bool DefaultAllowGuestComments { get; set; }
         public bool DefaultRequireApprovalForNonEditors { get; set; }
         public bool DefaultEnableLanguageFilter { get; set; }
@@ -2669,6 +2668,7 @@ WHERE PortalId = @PortalId;";
                 Available = false,
                 PostingEnabled = true,
                 GuestPostingEnabled = true,
+                CentralSettingsActive = false,
                 DefaultAllowGuestComments = false,
                 DefaultRequireApprovalForNonEditors = true,
                 DefaultEnableLanguageFilter = false,

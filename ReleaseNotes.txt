@@ -1,3 +1,13 @@
+Jacaranda Comments Advanced 01.03.00
+- Moves Advanced configuration to one portal-wide Comments Administration panel.
+- Removes page-level editing of Jacaranda-specific settings in the Advanced branch while preserving normal DNN module title, container, visibility, and permission settings.
+- Adds a one-time CentralSettingsActive migration flag so upgrading 01.02.x sites continue using their existing local module settings until a DNN Administrator or Superuser explicitly activates central management.
+- Keeps the existing portal emergency switches active during migration so all posting or guest posting can still be disabled immediately.
+- After activation, every Advanced module instance uses the portal settings for guest access, moderation, language filtering, comment length, rate limiting, CAPTCHA, and email notifications.
+- Retains old local Jacaranda module settings in DNN for migration/recovery safety but ignores them after activation.
+- Keeps central moderation, guest five-minute correction, registered-user 15-minute editing, approval/deletion, output encoding, anti-CSRF checks, parameterised SQL, and portal isolation unchanged.
+- Adds CentralSettingsActive to JacarandaCommentsPortalSettings. Existing comments and replies are not modified.
+
 Jacaranda Comments Advanced 01.02.02
 - Adds a secure five-minute correction window for newly submitted guest comments and replies while they remain pending moderation.
 - Allows guests to correct only the comment/reply text; guest display name and private email remain locked.

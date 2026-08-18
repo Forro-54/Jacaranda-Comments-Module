@@ -117,10 +117,53 @@
             }
 
             SavePortalSettings();
+            var centralActive = IsCentralSettingsActive();
             EnsureSecurityToken(true);
             LoadPendingComments();
             LoadPortalSettings();
-            ShowMessage("Site-wide Jacaranda Comments settings have been saved.", true);
+            ShowMessage(
+                centralActive
+                    ? "Central Jacaranda Comments settings have been saved."
+                    : "Settings have been saved for review. Existing module settings remain active until central configuration is activated.",
+                true);
+        }
+        catch (Exception ex)
+        {
+            Exceptions.ProcessModuleLoadException(this, ex);
+        }
+    }
+
+    protected void btnActivateCentral_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            if (!CanManagePortalSettings())
+            {
+                Response.StatusCode = 403;
+                ShowMessage("You are not authorised to activate central Jacaranda Comments settings.", false);
+                return;
+            }
+
+            if (!ValidateSecurityToken())
+            {
+                ShowMessage("For your safety, please refresh the page and try again.", false);
+                return;
+            }
+
+            Page.Validate("PortalSettings");
+            if (!Page.IsValid)
+            {
+                ShowMessage("Please correct the highlighted settings before activating central configuration.", false);
+                return;
+            }
+
+            SavePortalSettings();
+            ActivateCentralSettings();
+
+            EnsureSecurityToken(true);
+            LoadPendingComments();
+            LoadPortalSettings();
+            ShowMessage("Central configuration is now active. Every Jacaranda Comments Advanced instance in this portal uses the settings in Comments Administration.", true);
         }
         catch (Exception ex)
         {
@@ -469,6 +512,11 @@ OPTION (MAXRECURSION 100);";
         txtDefaultNotificationEmailAddresses.Text = settings.DefaultNotificationEmailAddresses;
         chkDefaultIncludeCommentTextInNotifications.Checked = settings.DefaultIncludeCommentTextInNotifications;
 
+        pnlCentralMigration.Visible = !settings.CentralSettingsActive;
+        pnlCentralActive.Visible = settings.CentralSettingsActive;
+        btnActivateCentral.Visible = !settings.CentralSettingsActive;
+        btnSave.Text = settings.CentralSettingsActive ? "Save comment settings" : "Save settings for review";
+
         if (settings.ModifiedOnDate.HasValue)
         {
             litAudit.Text = "Last changed "
@@ -493,6 +541,7 @@ OPTION (MAXRECURSION 100);";
             command.CommandText = @"
 SELECT PostingEnabled,
        GuestPostingEnabled,
+       CentralSettingsActive,
        DefaultAllowGuestComments,
        DefaultRequireApprovalForNonEditors,
        DefaultEnableLanguageFilter,
@@ -523,6 +572,7 @@ WHERE PortalId = @PortalId;";
 
                 settings.PostingEnabled = ReadBool(reader, "PostingEnabled", true);
                 settings.GuestPostingEnabled = ReadBool(reader, "GuestPostingEnabled", true);
+                settings.CentralSettingsActive = ReadBool(reader, "CentralSettingsActive", false);
                 settings.DefaultAllowGuestComments = ReadBool(reader, "DefaultAllowGuestComments", false);
                 settings.DefaultRequireApprovalForNonEditors = ReadBool(reader, "DefaultRequireApprovalForNonEditors", true);
                 settings.DefaultEnableLanguageFilter = ReadBool(reader, "DefaultEnableLanguageFilter", false);
@@ -585,6 +635,7 @@ BEGIN
         PortalId,
         PostingEnabled,
         GuestPostingEnabled,
+        CentralSettingsActive,
         DefaultAllowGuestComments,
         DefaultRequireApprovalForNonEditors,
         DefaultEnableLanguageFilter,
@@ -605,6 +656,7 @@ BEGIN
         @PortalId,
         @PostingEnabled,
         @GuestPostingEnabled,
+        0,
         @DefaultAllowGuestComments,
         @DefaultRequireApprovalForNonEditors,
         @DefaultEnableLanguageFilter,
@@ -644,6 +696,30 @@ END";
             connection.Open();
             command.ExecuteNonQuery();
         }
+    }
+
+    private void ActivateCentralSettings()
+    {
+        using (var connection = new SqlConnection(ConnectionString))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+UPDATE " + PortalSettingsTable + @"
+SET CentralSettingsActive = 1,
+    ModifiedOnDate = GETUTCDATE(),
+    ModifiedByUserId = @ModifiedByUserId
+WHERE PortalId = @PortalId
+  AND CentralSettingsActive = 0;";
+            command.Parameters.Add("@PortalId", SqlDbType.Int).Value = PortalId;
+            command.Parameters.Add("@ModifiedByUserId", SqlDbType.Int).Value = UserId;
+            connection.Open();
+            command.ExecuteNonQuery();
+        }
+    }
+
+    private bool IsCentralSettingsActive()
+    {
+        return ReadPortalSettings().CentralSettingsActive;
     }
 
     private void EnsureSecurityToken()
@@ -838,6 +914,7 @@ END";
     {
         public bool PostingEnabled { get; set; }
         public bool GuestPostingEnabled { get; set; }
+        public bool CentralSettingsActive { get; set; }
         public bool DefaultAllowGuestComments { get; set; }
         public bool DefaultRequireApprovalForNonEditors { get; set; }
         public bool DefaultEnableLanguageFilter { get; set; }
@@ -860,6 +937,7 @@ END";
             {
                 PostingEnabled = true,
                 GuestPostingEnabled = true,
+                CentralSettingsActive = false,
                 DefaultAllowGuestComments = false,
                 DefaultRequireApprovalForNonEditors = true,
                 DefaultEnableLanguageFilter = false,
@@ -888,7 +966,7 @@ END";
     <asp:Panel ID="pnlPortalSettings" runat="server">
         <h2>Jacaranda Comments Administration</h2>
         <p class="jc-setting-help">
-            Moderate pending comments from every Jacaranda Comments instance in this DNN portal, then manage the portal-wide emergency controls and defaults below.
+            Moderate pending comments from every Jacaranda Comments instance in this DNN portal and manage the commenting configuration for the whole portal in one place.
         </p>
 
         <asp:Panel ID="pnlMessage" runat="server" Visible="false" CssClass="jc-message">
@@ -967,6 +1045,28 @@ END";
             </asp:Panel>
         </fieldset>
 
+        <asp:Panel ID="pnlCentralMigration" runat="server" Visible="false" CssClass="jc-message jc-message-error">
+            <h3>Central configuration is not yet active</h3>
+            <p>
+                Existing Advanced 01.02.x modules are still using their stored page-level settings. Review the portal settings below and save them for review before activating central management.
+            </p>
+            <p>
+                The emergency posting switches below remain active immediately, as they did in 01.02.x. Activating central configuration is permanent for the Advanced branch: all Jacaranda-specific settings will then come from this Comments Administration panel.
+            </p>
+            <asp:Button ID="btnActivateCentral"
+                        runat="server"
+                        Text="Activate central settings for this portal"
+                        CssClass="jc-submit"
+                        ValidationGroup="PortalSettings"
+                        OnClick="btnActivateCentral_Click"
+                        OnClientClick="return confirm('Activate central Jacaranda Comments settings for every Advanced module in this portal? Existing local Jacaranda module settings will remain stored but will no longer control the Advanced edition. This activation cannot be undone from the module interface.');" />
+        </asp:Panel>
+
+        <asp:Panel ID="pnlCentralActive" runat="server" Visible="false" CssClass="jc-message">
+            <strong>Central configuration is active.</strong>
+            Every Jacaranda Comments Advanced instance in this portal uses the settings on this page. Stored page-level Jacaranda settings are retained for safety but are ignored.
+        </asp:Panel>
+
         <fieldset class="jc-settings-section jc-emergency-settings">
             <legend>Emergency controls</legend>
 
@@ -980,37 +1080,37 @@ END";
             <div class="jc-setting-row">
                 <asp:CheckBox ID="chkGuestPostingEnabled" runat="server" Text="Allow guest posting anywhere on this portal" />
                 <p class="jc-setting-warning">
-                    Clearing this switch disables guest posting and any still-open guest correction window across every module, even where a local module setting or inherited default would otherwise allow guests. Registered-user posting is unaffected.
+                    Clearing this switch disables guest posting and any still-open guest correction window across every module, regardless of the normal guest setting below. Registered-user posting is unaffected.
                 </p>
             </div>
         </fieldset>
 
         <fieldset class="jc-settings-section">
-            <legend>Portal defaults</legend>
+            <legend>Comment settings</legend>
             <p class="jc-setting-help">
-                These values are used only by module instances with “Use site-wide defaults” enabled. Existing modules keep their current local settings after upgrade until an administrator deliberately opts them in.
+                After central configuration is activated, these values apply to every Jacaranda Comments Advanced instance in this portal.
             </p>
 
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultAllowGuestComments" runat="server" Text="Allow guest comments and replies by default" />
+                <asp:CheckBox ID="chkDefaultAllowGuestComments" runat="server" Text="Allow guest comments and replies" />
             </div>
 
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultRequireApproval" runat="server" Text="Hold comments and replies from non-editors for approval by default" />
+                <asp:CheckBox ID="chkDefaultRequireApproval" runat="server" Text="Hold comments and replies from non-editors for approval" />
             </div>
 
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultEnableLanguageFilter" runat="server" Text="Enable the private language filter by default" />
+                <asp:CheckBox ID="chkDefaultEnableLanguageFilter" runat="server" Text="Enable the private language filter" />
             </div>
 
             <div class="jc-field">
-                <asp:Label ID="lblDefaultBlockedLanguageTerms" runat="server" AssociatedControlID="txtDefaultBlockedLanguageTerms" Text="Default private language-filter terms" />
+                <asp:Label ID="lblDefaultBlockedLanguageTerms" runat="server" AssociatedControlID="txtDefaultBlockedLanguageTerms" Text="Private language-filter terms" />
                 <asp:TextBox ID="txtDefaultBlockedLanguageTerms" runat="server" TextMode="MultiLine" Rows="7" CssClass="jc-textarea jc-language-terms" />
                 <p class="jc-setting-help">Enter one private term or phrase per line. Maximum 250 entries and 100 characters per entry.</p>
             </div>
 
             <div class="jc-field jc-setting-number">
-                <asp:Label ID="lblDefaultMaximumCommentLength" runat="server" AssociatedControlID="txtDefaultMaximumCommentLength" Text="Default maximum characters per comment or reply" />
+                <asp:Label ID="lblDefaultMaximumCommentLength" runat="server" AssociatedControlID="txtDefaultMaximumCommentLength" Text="Maximum characters per comment or reply" />
                 <asp:TextBox ID="txtDefaultMaximumCommentLength" runat="server" CssClass="jc-input" MaxLength="5" />
                 <asp:RequiredFieldValidator ID="valDefaultMaximumCommentLengthRequired" runat="server" ValidationGroup="PortalSettings" ControlToValidate="txtDefaultMaximumCommentLength" CssClass="jc-validation" Display="Dynamic" ErrorMessage="Enter a maximum comment length." />
                 <asp:RangeValidator ID="valDefaultMaximumCommentLengthRange" runat="server" ValidationGroup="PortalSettings" ControlToValidate="txtDefaultMaximumCommentLength" CssClass="jc-validation" Display="Dynamic" Type="Integer" MinimumValue="250" MaximumValue="10000" ErrorMessage="Enter a whole number from 250 to 10,000." />
@@ -1018,9 +1118,9 @@ END";
         </fieldset>
 
         <fieldset class="jc-settings-section">
-            <legend>Default rate limiting</legend>
+            <legend>Rate limiting</legend>
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultEnableRateLimiting" runat="server" Text="Enable rate limiting for non-editor posters by default" />
+                <asp:CheckBox ID="chkDefaultEnableRateLimiting" runat="server" Text="Enable rate limiting for non-editor posters" />
             </div>
             <div class="jc-setting-grid">
                 <div class="jc-field">
@@ -1039,31 +1139,31 @@ END";
         </fieldset>
 
         <fieldset class="jc-settings-section">
-            <legend>Default CAPTCHA</legend>
+            <legend>CAPTCHA</legend>
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultEnableCaptcha" runat="server" Text="Enable the built-in anti-spam CAPTCHA by default" />
+                <asp:CheckBox ID="chkDefaultEnableCaptcha" runat="server" Text="Enable the built-in anti-spam CAPTCHA" />
             </div>
         </fieldset>
 
         <fieldset class="jc-settings-section">
-            <legend>Default email notifications</legend>
+            <legend>Email notifications</legend>
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultEnableNotifications" runat="server" Text="Email moderators when a new comment or reply is submitted by default" />
+                <asp:CheckBox ID="chkDefaultEnableNotifications" runat="server" Text="Email moderators when a new comment or reply is submitted" />
             </div>
             <div class="jc-field">
-                <asp:Label ID="lblDefaultNotificationEmailAddresses" runat="server" AssociatedControlID="txtDefaultNotificationEmailAddresses" Text="Default notification email address(es)" />
+                <asp:Label ID="lblDefaultNotificationEmailAddresses" runat="server" AssociatedControlID="txtDefaultNotificationEmailAddresses" Text="Notification email address(es)" />
                 <asp:TextBox ID="txtDefaultNotificationEmailAddresses" runat="server" TextMode="MultiLine" Rows="3" CssClass="jc-textarea" MaxLength="2000" />
                 <p class="jc-setting-help">Separate multiple addresses with commas or semicolons. Leave blank to use the portal email address.</p>
             </div>
             <div class="jc-setting-row">
-                <asp:CheckBox ID="chkDefaultIncludeCommentTextInNotifications" runat="server" Text="Include submitted comment text in notification emails by default" />
+                <asp:CheckBox ID="chkDefaultIncludeCommentTextInNotifications" runat="server" Text="Include submitted comment text in notification emails" />
             </div>
         </fieldset>
 
         <div class="jc-audit-note"><asp:Literal ID="litAudit" runat="server" /></div>
 
         <div class="jc-settings-actions">
-            <asp:Button ID="btnSave" runat="server" Text="Save site-wide settings" CssClass="jc-submit" ValidationGroup="PortalSettings" OnClick="btnSave_Click" OnClientClick="return confirm('Save these portal-wide Jacaranda Comments settings? Emergency controls may affect every module instance on this portal.');" />
+            <asp:Button ID="btnSave" runat="server" Text="Save comment settings" CssClass="jc-submit" ValidationGroup="PortalSettings" OnClick="btnSave_Click" OnClientClick="return confirm('Save these Jacaranda Comments settings? Emergency controls may affect every module instance on this portal.');" />
             <asp:Button ID="btnCancel" runat="server" Text="Cancel" CssClass="jc-secondary-button" CausesValidation="false" OnClick="btnCancel_Click" />
         </div>
     </asp:Panel>

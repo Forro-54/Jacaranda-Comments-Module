@@ -1,0 +1,20 @@
+-- Jacaranda Comments Advanced 01.03.00
+-- Adds the one-time portal central-configuration activation flag.
+-- Existing Advanced 01.02.x module settings continue to operate until an
+-- Administrator explicitly activates central configuration.
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE object_id = OBJECT_ID(N'{databaseOwner}[{objectQualifier}JacarandaCommentsPortalSettings]')
+      AND type = N'U'
+)
+BEGIN
+    IF COL_LENGTH('{databaseOwner}{objectQualifier}JacarandaCommentsPortalSettings', 'CentralSettingsActive') IS NULL
+    BEGIN
+        ALTER TABLE {databaseOwner}[{objectQualifier}JacarandaCommentsPortalSettings]
+        ADD [CentralSettingsActive] BIT NOT NULL
+            CONSTRAINT [DF_{objectQualifier}JCPS_CentralActive] DEFAULT ((0));
+    END
+END
+GO
